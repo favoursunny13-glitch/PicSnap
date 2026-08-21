@@ -181,16 +181,16 @@
     scene.cameras.main.setBackgroundColor(COLORS.background);
     scene.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, COLORS.background, 1).setDepth(-100);
 
-    const leftGlow = scene.add.circle(80, 110, 300, accentColor, 0.105)
+    const leftGlow = scene.add.circle(-40, 190, 390, accentColor, 0.115)
       .setBlendMode(Phaser.BlendModes.ADD)
       .setDepth(-90);
-    const rightGlow = scene.add.circle(1180, 660, 390, 0x4a4a50, 0.085)
+    const rightGlow = scene.add.circle(1320, 530, 440, 0x777780, 0.095)
       .setBlendMode(Phaser.BlendModes.ADD)
       .setDepth(-90);
     scene.tweens.add({
       targets: leftGlow,
-      x: 170,
-      y: 165,
+      x: 65,
+      y: 235,
       scale: 1.16,
       alpha: 0.065,
       duration: 6200,
@@ -200,14 +200,40 @@
     });
     scene.tweens.add({
       targets: rightGlow,
-      x: 1080,
-      y: 590,
+      x: 1195,
+      y: 475,
       scale: 0.88,
       duration: 7600,
       ease: "Sine.InOut",
       yoyo: true,
       repeat: -1,
     });
+
+    const edgeDetails = scene.add.graphics().setDepth(-70);
+    edgeDetails.lineStyle(1, accentColor, 0.22);
+    edgeDetails.lineBetween(24, 96, 24, 286);
+    edgeDetails.lineBetween(24, 434, 24, 624);
+    edgeDetails.strokeCircle(-95, GAME_HEIGHT / 2, 315);
+    edgeDetails.lineStyle(1, 0xd7d7dc, 0.14);
+    edgeDetails.lineBetween(GAME_WIDTH - 24, 96, GAME_WIDTH - 24, 286);
+    edgeDetails.lineBetween(GAME_WIDTH - 24, 434, GAME_WIDTH - 24, 624);
+    edgeDetails.strokeCircle(GAME_WIDTH + 110, GAME_HEIGHT / 2, 340);
+    edgeDetails.fillStyle(accentColor, 0.58);
+    edgeDetails.fillCircle(24, 360, 2.5);
+    edgeDetails.fillCircle(GAME_WIDTH - 24, 360, 2.5);
+
+    scene.add.text(23, GAME_HEIGHT / 2, "FASHION  /  IMAGE  /  PLAY", {
+      fontFamily: '-apple-system, BlinkMacSystemFont, Pretendard, sans-serif',
+      fontSize: "9px",
+      color: "#8a8a90",
+      letterSpacing: 2.1,
+    }).setOrigin(0.5).setAngle(-90).setDepth(-60).setAlpha(0.58);
+    scene.add.text(GAME_WIDTH - 23, GAME_HEIGHT / 2, "PICSNAP  /  EDITORIAL", {
+      fontFamily: '-apple-system, BlinkMacSystemFont, Pretendard, sans-serif',
+      fontSize: "9px",
+      color: "#8a8a90",
+      letterSpacing: 2.1,
+    }).setOrigin(0.5).setAngle(90).setDepth(-60).setAlpha(0.58);
 
     for (let index = 0; index < 18; index += 1) {
       const dot = scene.add.circle(

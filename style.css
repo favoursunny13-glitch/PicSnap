@@ -1,7 +1,7 @@
 :root {
   color-scheme: dark;
-  font-family: Pretendard, "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif;
-  background: #08111f;
+  font-family: -apple-system, BlinkMacSystemFont, Pretendard, "Noto Sans KR", system-ui, sans-serif;
+  background: #050505;
 }
 
 * {
@@ -16,8 +16,9 @@ body {
   overflow: hidden;
   overscroll-behavior: none;
   background:
-    radial-gradient(circle at 50% -20%, #203858 0%, transparent 45%),
-    #08111f;
+    radial-gradient(circle at 12% 6%, rgba(255, 122, 26, 0.16), transparent 34%),
+    radial-gradient(circle at 88% 92%, rgba(145, 145, 155, 0.12), transparent 42%),
+    #050505;
 }
 
 body {
@@ -43,6 +44,8 @@ body {
   margin: auto;
   outline: none;
   touch-action: none;
+  image-rendering: auto;
+  filter: saturate(1.03) contrast(1.015);
 }
 
 noscript {

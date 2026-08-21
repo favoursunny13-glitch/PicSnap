@@ -10,11 +10,11 @@
   const GAME_HEIGHT = 720;
   const GRID_SIZE = 3;
   const PIECE_COUNT = GRID_SIZE * GRID_SIZE;
-  const PIECE_DISPLAY_SIZE = 128;
   const PIECE_TEXTURE_SIZE = 256;
-  const SNAP_THRESHOLD_RATIO = 0.24;
-  // TODO: 실제 플레이 테스트 후 Snap Threshold 튜닝
-  const SNAP_THRESHOLD = PIECE_DISPLAY_SIZE * SNAP_THRESHOLD_RATIO;
+  const BOARD_CENTER_X = GAME_WIDTH / 2;
+  const BOARD_CENTER_Y = 380;
+  const MAX_BOARD_WIDTH = 640;
+  const MAX_BOARD_HEIGHT = 470;
 
   const COLORS = {
     background: 0x08111f,
@@ -32,17 +32,19 @@
     {
       id: 1,
       title: "Stage 01",
-      image: "./assets/images/stage01.jpg",
-      thumbnail: "./assets/images/stage01.jpg",
-      useBundledImage: false,
+      image: "./assets/images/stage01.jpg?v=20260821-2",
+      thumbnail: "./assets/images/stage01.jpg?v=20260821-2",
+      useBundledImage: true,
+      demoAspect: 0.72,
       palette: ["#ff7b72", "#f6c453", "#5ad7c8", "#5b8def"],
     },
     {
       id: 2,
       title: "Stage 02",
-      image: "./assets/images/stage02.jpg",
-      thumbnail: "./assets/images/stage02.jpg",
-      useBundledImage: false,
+      image: "./assets/images/stage02.jpg?v=20260821-2",
+      thumbnail: "./assets/images/stage02.jpg?v=20260821-2",
+      useBundledImage: true,
+      demoAspect: 1.5,
       palette: ["#9b7bff", "#55c2ff", "#67df9a", "#f28cc8"],
     },
   ];
@@ -71,38 +73,52 @@
     }
 
     const canvas = document.createElement("canvas");
-    canvas.width = 768;
+    canvas.width = Math.round(768 * (stage.demoAspect || 1));
     canvas.height = 768;
+    const width = canvas.width;
+    const height = canvas.height;
+    const minimumSize = Math.min(width, height);
     const context = canvas.getContext("2d");
-    const gradient = context.createLinearGradient(0, 0, 768, 768);
+    const gradient = context.createLinearGradient(0, 0, width, height);
     gradient.addColorStop(0, stage.palette[0]);
     gradient.addColorStop(0.38, stage.palette[1]);
     gradient.addColorStop(0.7, stage.palette[2]);
     gradient.addColorStop(1, stage.palette[3]);
     context.fillStyle = gradient;
-    context.fillRect(0, 0, 768, 768);
+    context.fillRect(0, 0, width, height);
 
     context.globalAlpha = 0.2;
     for (let i = 0; i < 12; i += 1) {
       context.beginPath();
-      context.arc(80 + (i % 4) * 205, 90 + Math.floor(i / 4) * 270, 55 + i * 5, 0, Math.PI * 2);
+      context.arc(
+        width * ((i % 4) + 0.5) / 4,
+        height * (Math.floor(i / 4) + 0.5) / 3,
+        minimumSize * (0.07 + i * 0.004),
+        0,
+        Math.PI * 2,
+      );
       context.fillStyle = i % 2 ? "#ffffff" : "#08111f";
       context.fill();
     }
     context.globalAlpha = 1;
 
+    const labelWidth = width * 0.68;
+    const labelHeight = height * 0.255;
+    const labelX = (width - labelWidth) / 2;
+    const labelY = (height - labelHeight) / 2;
     context.fillStyle = "rgba(8, 17, 31, 0.70)";
-    context.roundRect(120, 286, 528, 196, 32);
+    context.roundRect(labelX, labelY, labelWidth, labelHeight, minimumSize * 0.04);
     context.fill();
     context.fillStyle = "#ffffff";
     context.textAlign = "center";
-    context.font = "700 76px sans-serif";
-    context.fillText("PicSnap", 384, 375);
-    context.font = "500 32px sans-serif";
-    context.fillText(stage.title, 384, 430);
+    context.font = `700 ${Math.round(minimumSize * 0.10)}px sans-serif`;
+    context.fillText("PicSnap", width / 2, height * 0.49);
+    context.font = `500 ${Math.round(minimumSize * 0.043)}px sans-serif`;
+    context.fillText(stage.title, width / 2, height * 0.57);
     context.strokeStyle = "rgba(255,255,255,0.55)";
-    context.lineWidth = 8;
-    context.strokeRect(18, 18, 732, 732);
+    context.lineWidth = Math.max(4, minimumSize * 0.01);
+    const borderMargin = minimumSize * 0.024;
+    context.strokeRect(borderMargin, borderMargin, width - borderMargin * 2, height - borderMargin * 2);
 
     scene.textures.addCanvas(key, canvas);
     return key;
@@ -182,7 +198,12 @@
           .setStrokeStyle(2, GAME_STATE.clearedStages.has(stage.id) ? COLORS.success : COLORS.panelLight)
           .setInteractive({ useHandCursor: true });
         const textureKey = ensureStageTexture(this, stage);
-        const image = this.add.image(x, y - 58, textureKey).setDisplaySize(320, 320);
+        const source = this.textures.get(textureKey).getSourceImage();
+        const sourceWidth = source.naturalWidth || source.width;
+        const sourceHeight = source.naturalHeight || source.height;
+        const thumbnailScale = Math.min(320 / sourceWidth, 320 / sourceHeight);
+        const image = this.add.image(x, y - 58, textureKey)
+          .setDisplaySize(sourceWidth * thumbnailScale, sourceHeight * thumbnailScale);
         const shade = this.add.rectangle(x, y + 135, 320, 48, 0x08111f, 0.76);
         this.add.text(x, y + 135, stage.title, {
           fontFamily: 'Pretendard, "Noto Sans KR", "Malgun Gothic", sans-serif',
@@ -220,17 +241,19 @@
   class PuzzleScene extends Phaser.Scene {
     constructor() {
       super("PuzzleScene");
-      this.groups = new Map();
       this.pieces = [];
+      this.slotOccupants = [];
       this.dragState = null;
+      this.isSwapping = false;
       this.isClearing = false;
     }
 
     init(data) {
       this.stage = getStage(data.stageId);
-      this.groups = new Map();
       this.pieces = [];
+      this.slotOccupants = new Array(PIECE_COUNT).fill(null);
       this.dragState = null;
+      this.isSwapping = false;
       this.isClearing = false;
     }
 
@@ -249,7 +272,7 @@
         fontStyle: "bold",
         color: COLORS.text,
       }).setOrigin(0, 0.5).setDepth(2001);
-      this.add.text(GAME_WIDTH / 2, 40, "가까운 정답 조각끼리 스냅됩니다", {
+      this.add.text(GAME_WIDTH / 2, 40, "다른 칸으로 옮기면 두 조각의 위치가 교환됩니다", {
         fontFamily: 'Pretendard, "Noto Sans KR", "Malgun Gothic", sans-serif',
         fontSize: "18px",
         color: COLORS.muted,
@@ -262,19 +285,61 @@
       }).setDepth(2002);
 
       const textureKey = ensureStageTexture(this, this.stage);
+      this.boardLayout = this.calculateBoardLayout(textureKey);
       this.createPieceTextures(textureKey);
+      this.createBoardGrid();
       this.createPieces();
       this.bindDragEvents();
+    }
+
+    calculateBoardLayout(sourceKey) {
+      const source = this.textures.get(sourceKey).getSourceImage();
+      const sourceWidth = source.naturalWidth || source.width;
+      const sourceHeight = source.naturalHeight || source.height;
+      const aspectRatio = sourceWidth / sourceHeight;
+      let boardWidth = MAX_BOARD_WIDTH;
+      let boardHeight = boardWidth / aspectRatio;
+
+      if (boardHeight > MAX_BOARD_HEIGHT) {
+        boardHeight = MAX_BOARD_HEIGHT;
+        boardWidth = boardHeight * aspectRatio;
+      }
+
+      return {
+        boardWidth,
+        boardHeight,
+        pieceWidth: boardWidth / GRID_SIZE,
+        pieceHeight: boardHeight / GRID_SIZE,
+      };
+    }
+
+    createBoardGrid() {
+      const board = this.add.graphics().setDepth(-10);
+      const { boardWidth, boardHeight, pieceWidth, pieceHeight } = this.boardLayout;
+      const boardLeft = BOARD_CENTER_X - boardWidth / 2;
+      const boardTop = BOARD_CENTER_Y - boardHeight / 2;
+
+      board.fillStyle(COLORS.panel, 0.92);
+      board.fillRoundedRect(boardLeft - 8, boardTop - 8, boardWidth + 16, boardHeight + 16, 14);
+      board.lineStyle(3, COLORS.primary, 0.8);
+      board.strokeRoundedRect(boardLeft - 8, boardTop - 8, boardWidth + 16, boardHeight + 16, 14);
+      board.lineStyle(2, 0xffffff, 0.24);
+
+      for (let index = 1; index < GRID_SIZE; index += 1) {
+        board.lineBetween(boardLeft + index * pieceWidth, boardTop, boardLeft + index * pieceWidth, boardTop + boardHeight);
+        board.lineBetween(boardLeft, boardTop + index * pieceHeight, boardLeft + boardWidth, boardTop + index * pieceHeight);
+      }
     }
 
     createPieceTextures(sourceKey) {
       const source = this.textures.get(sourceKey).getSourceImage();
       const sourceWidth = source.naturalWidth || source.width;
       const sourceHeight = source.naturalHeight || source.height;
-      const squareSize = Math.min(sourceWidth, sourceHeight);
-      const cropX = (sourceWidth - squareSize) / 2;
-      const cropY = (sourceHeight - squareSize) / 2;
-      const sourceCellSize = squareSize / GRID_SIZE;
+      const sourceCellWidth = sourceWidth / GRID_SIZE;
+      const sourceCellHeight = sourceHeight / GRID_SIZE;
+      const aspectRatio = sourceCellWidth / sourceCellHeight;
+      const textureWidth = aspectRatio >= 1 ? PIECE_TEXTURE_SIZE : Math.max(1, Math.round(PIECE_TEXTURE_SIZE * aspectRatio));
+      const textureHeight = aspectRatio >= 1 ? Math.max(1, Math.round(PIECE_TEXTURE_SIZE / aspectRatio)) : PIECE_TEXTURE_SIZE;
 
       for (let row = 0; row < GRID_SIZE; row += 1) {
         for (let col = 0; col < GRID_SIZE; col += 1) {
@@ -284,19 +349,19 @@
             continue;
           }
           const canvas = document.createElement("canvas");
-          canvas.width = PIECE_TEXTURE_SIZE;
-          canvas.height = PIECE_TEXTURE_SIZE;
+          canvas.width = textureWidth;
+          canvas.height = textureHeight;
           const context = canvas.getContext("2d");
           context.drawImage(
             source,
-            cropX + col * sourceCellSize,
-            cropY + row * sourceCellSize,
-            sourceCellSize,
-            sourceCellSize,
+            col * sourceCellWidth,
+            row * sourceCellHeight,
+            sourceCellWidth,
+            sourceCellHeight,
             0,
             0,
-            PIECE_TEXTURE_SIZE,
-            PIECE_TEXTURE_SIZE,
+            textureWidth,
+            textureHeight,
           );
           this.textures.addCanvas(key, canvas);
         }
@@ -310,174 +375,153 @@
           const id = row * GRID_SIZE + col;
           const position = positions[id];
           const gameObject = this.add.image(position.x, position.y, `piece-${this.stage.id}-${id}`)
-            .setDisplaySize(PIECE_DISPLAY_SIZE, PIECE_DISPLAY_SIZE);
+            .setDisplaySize(this.boardLayout.pieceWidth, this.boardLayout.pieceHeight);
           gameObject.setInteractive({ draggable: true, useHandCursor: true });
           this.input.setDraggable(gameObject);
           gameObject.pieceData = {
             id,
             row,
             col,
-            groupId: id,
+            currentSlot: position.slotId,
             sourceRect: { row, col },
           };
           this.pieces.push(gameObject);
-          this.groups.set(id, { id, members: new Set([id]) });
+          this.slotOccupants[position.slotId] = id;
         }
       }
     }
 
     createRandomPositions() {
       const slots = [];
-      const xValues = [150, 395, 640, 885, 1130];
-      const yValues = [225, 535];
-      yValues.forEach((y) => {
-        xValues.forEach((x) => {
+      const { pieceWidth, pieceHeight } = this.boardLayout;
+      for (let row = 0; row < GRID_SIZE; row += 1) {
+        for (let col = 0; col < GRID_SIZE; col += 1) {
           slots.push({
-            x: x + Phaser.Math.Between(-24, 24),
-            y: y + Phaser.Math.Between(-32, 32),
+            x: BOARD_CENTER_X + (col - 1) * pieceWidth,
+            y: BOARD_CENTER_Y + (row - 1) * pieceHeight,
+            slotId: row * GRID_SIZE + col,
           });
-        });
-      });
-      Phaser.Utils.Array.Shuffle(slots);
-      return slots.slice(0, PIECE_COUNT);
+        }
+      }
+
+      // 완성 상태로 시작하지 않도록 최소 한 번은 위치가 섞인 배열을 만든다.
+      do {
+        Phaser.Utils.Array.Shuffle(slots);
+      } while (slots.every((slot, pieceId) => slot.slotId === pieceId));
+
+      return slots;
     }
 
     bindDragEvents() {
       this.input.on("dragstart", (pointer, gameObject) => {
-        if (this.isClearing || !gameObject.pieceData) {
+        if (this.isClearing || this.isSwapping || !gameObject.pieceData) {
           return;
         }
-        const groupId = gameObject.pieceData.groupId;
-        const group = this.groups.get(groupId);
-        const starts = new Map();
-        group.members.forEach((pieceId) => {
-          const piece = this.pieces[pieceId];
-          starts.set(pieceId, { x: piece.x, y: piece.y });
-          piece.setDepth(1000 + pieceId);
-        });
+        gameObject.setDepth(1000);
         this.dragState = {
-          groupId,
-          pointerStart: { x: pointer.worldX, y: pointer.worldY },
-          starts,
+          pieceId: gameObject.pieceData.id,
+          sourceSlot: gameObject.pieceData.currentSlot,
         };
       });
 
-      this.input.on("drag", (pointer, gameObject) => {
+      this.input.on("drag", (pointer, gameObject, dragX, dragY) => {
+        if (!this.dragState || this.isClearing || this.isSwapping || !gameObject.pieceData) {
+          return;
+        }
+        gameObject.setPosition(dragX, dragY);
+      });
+
+      this.input.on("dragend", (pointer, gameObject) => {
         if (!this.dragState || this.isClearing || !gameObject.pieceData) {
           return;
         }
-        const deltaX = pointer.worldX - this.dragState.pointerStart.x;
-        const deltaY = pointer.worldY - this.dragState.pointerStart.y;
-        this.dragState.starts.forEach((start, pieceId) => {
-          this.pieces[pieceId].setPosition(start.x + deltaX, start.y + deltaY);
-        });
-      });
+        const sourceSlot = this.dragState.sourceSlot;
+        const targetSlot = this.getNearestSlot(gameObject.x, gameObject.y);
+        this.dragState = null;
 
-      this.input.on("dragend", () => {
-        if (!this.dragState || this.isClearing) {
+        if (targetSlot === sourceSlot) {
+          this.snapPieceToSlot(gameObject, sourceSlot);
           return;
         }
-        const groupId = this.dragState.groupId;
-        this.dragState = null;
-        const snapCount = this.resolveChainSnaps(groupId);
-        this.normalizeDepths();
-        if (snapCount > 0) {
-          this.showSnapFeedback(snapCount);
-        }
-        this.checkClearCondition(groupId);
-        // TODO: 오답 Drop 정책은 기획 최종 결정에 따라 변경 가능
+
+        this.swapSlotPieces(gameObject, sourceSlot, targetSlot);
       });
     }
 
-    resolveChainSnaps(movingGroupId) {
-      let snapCount = 0;
-      let safetyCount = 0;
-      while (safetyCount < PIECE_COUNT) {
-        safetyCount += 1;
-        const candidate = this.findBestSnap(movingGroupId);
-        if (!candidate) {
-          break;
-        }
-        this.translateGroup(movingGroupId, candidate.deltaX, candidate.deltaY);
-        this.mergeGroups(movingGroupId, candidate.targetGroupId);
-        snapCount += 1;
-      }
-      return snapCount;
+    getSlotCenter(slotId) {
+      const row = Math.floor(slotId / GRID_SIZE);
+      const col = slotId % GRID_SIZE;
+      return {
+        x: BOARD_CENTER_X + (col - 1) * this.boardLayout.pieceWidth,
+        y: BOARD_CENTER_Y + (row - 1) * this.boardLayout.pieceHeight,
+      };
     }
 
-    findBestSnap(movingGroupId) {
-      const movingGroup = this.groups.get(movingGroupId);
-      if (!movingGroup) {
-        return null;
-      }
-      let best = null;
-      movingGroup.members.forEach((movingPieceId) => {
-        const movingPiece = this.pieces[movingPieceId];
-        this.groups.forEach((targetGroup, targetGroupId) => {
-          if (targetGroupId === movingGroupId) {
-            return;
-          }
-          targetGroup.members.forEach((targetPieceId) => {
-            const targetPiece = this.pieces[targetPieceId];
-            const rowDifference = movingPiece.pieceData.row - targetPiece.pieceData.row;
-            const colDifference = movingPiece.pieceData.col - targetPiece.pieceData.col;
-            if (Math.abs(rowDifference) + Math.abs(colDifference) !== 1) {
-              return;
-            }
-            const expectedX = targetPiece.x + colDifference * PIECE_DISPLAY_SIZE;
-            const expectedY = targetPiece.y + rowDifference * PIECE_DISPLAY_SIZE;
-            const deltaX = expectedX - movingPiece.x;
-            const deltaY = expectedY - movingPiece.y;
-            const distance = Math.hypot(deltaX, deltaY);
-            if (distance <= SNAP_THRESHOLD && (!best || distance < best.distance)) {
-              best = { targetGroupId, deltaX, deltaY, distance };
-            }
-          });
-        });
-      });
-      return best;
+    getNearestSlot(x, y) {
+      const { pieceWidth, pieceHeight } = this.boardLayout;
+      const boardLeftCenter = BOARD_CENTER_X - pieceWidth;
+      const boardTopCenter = BOARD_CENTER_Y - pieceHeight;
+      const col = Phaser.Math.Clamp(Math.round((x - boardLeftCenter) / pieceWidth), 0, GRID_SIZE - 1);
+      const row = Phaser.Math.Clamp(Math.round((y - boardTopCenter) / pieceHeight), 0, GRID_SIZE - 1);
+      return row * GRID_SIZE + col;
     }
 
-    translateGroup(groupId, deltaX, deltaY) {
-      const group = this.groups.get(groupId);
-      group.members.forEach((pieceId) => {
-        const piece = this.pieces[pieceId];
-        piece.setPosition(piece.x + deltaX, piece.y + deltaY);
+    snapPieceToSlot(piece, slotId) {
+      const center = this.getSlotCenter(slotId);
+      this.isSwapping = true;
+      this.tweens.add({
+        targets: piece,
+        x: center.x,
+        y: center.y,
+        duration: 160,
+        ease: "Cubic.Out",
+        onComplete: () => {
+          piece.setDepth(piece.pieceData.id);
+          this.isSwapping = false;
+        },
       });
     }
 
-    mergeGroups(primaryGroupId, absorbedGroupId) {
-      const primary = this.groups.get(primaryGroupId);
-      const absorbed = this.groups.get(absorbedGroupId);
-      if (!primary || !absorbed || primaryGroupId === absorbedGroupId) {
-        return;
-      }
-      absorbed.members.forEach((pieceId) => {
-        primary.members.add(pieceId);
-        this.pieces[pieceId].pieceData.groupId = primaryGroupId;
+    swapSlotPieces(draggedPiece, sourceSlot, targetSlot) {
+      const targetPieceId = this.slotOccupants[targetSlot];
+      const targetPiece = this.pieces[targetPieceId];
+      const sourceCenter = this.getSlotCenter(sourceSlot);
+      const targetCenter = this.getSlotCenter(targetSlot);
+
+      this.isSwapping = true;
+      this.slotOccupants[sourceSlot] = targetPieceId;
+      this.slotOccupants[targetSlot] = draggedPiece.pieceData.id;
+      draggedPiece.pieceData.currentSlot = targetSlot;
+      targetPiece.pieceData.currentSlot = sourceSlot;
+
+      this.tweens.add({
+        targets: targetPiece,
+        x: sourceCenter.x,
+        y: sourceCenter.y,
+        duration: 180,
+        ease: "Cubic.Out",
       });
-      this.groups.delete(absorbedGroupId);
-      this.calculateGroupScale(primary);
+      this.tweens.add({
+        targets: draggedPiece,
+        x: targetCenter.x,
+        y: targetCenter.y,
+        duration: 180,
+        ease: "Cubic.Out",
+        onComplete: () => {
+          this.pieces.forEach((piece) => piece.setDepth(piece.pieceData.id));
+          this.isSwapping = false;
+          this.showSwapFeedback();
+          this.checkSlotClearCondition();
+        },
+      });
     }
 
-    calculateGroupScale(group) {
-      // TODO: 기획 확정 후 그룹 크기 변화 규칙 구현
-      return group ? 1 : 1;
-    }
-
-    normalizeDepths() {
-      this.pieces.forEach((piece, index) => piece.setDepth(index));
-    }
-
-    showSnapFeedback(snapCount) {
-      const isChain = snapCount >= 2;
-      const label = isChain ? `${snapCount} CHAIN SNAP!` : "SNAP!";
-      const color = isChain ? "#f6c453" : "#5ad7c8";
-      const feedback = this.add.text(GAME_WIDTH / 2, 118, label, {
+    showSwapFeedback() {
+      const feedback = this.add.text(GAME_WIDTH / 2, 118, "SWAP!", {
         fontFamily: 'Pretendard, "Noto Sans KR", "Malgun Gothic", sans-serif',
-        fontSize: isChain ? "42px" : "34px",
+        fontSize: "34px",
         fontStyle: "bold",
-        color,
+        color: "#5ad7c8",
         stroke: "#08111f",
         strokeThickness: 8,
       }).setOrigin(0.5).setDepth(3000).setScale(0.55).setAlpha(0);
@@ -488,14 +532,14 @@
         y: 136,
         duration: 180,
         yoyo: true,
-        hold: isChain ? 520 : 260,
+        hold: 220,
         onComplete: () => feedback.destroy(),
       });
     }
 
-    checkClearCondition(groupId) {
-      const group = this.groups.get(groupId);
-      if (this.groups.size === 1 && group && group.members.size === PIECE_COUNT) {
+    checkSlotClearCondition() {
+      const isComplete = this.pieces.every((piece) => piece.pieceData.currentSlot === piece.pieceData.id);
+      if (isComplete) {
         this.isClearing = true;
         this.input.enabled = false;
         GAME_STATE.clearedStages.add(this.stage.id);

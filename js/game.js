@@ -19,16 +19,16 @@
   const PIECE_CORNER_RADIUS = 14;
 
   const COLORS = {
-    background: 0x050505,
-    panel: 0x111113,
-    panelLight: 0x1d1d20,
-    primary: 0xff7a1a,
-    primaryDark: 0x9f3f08,
-    accent: 0xffb36b,
-    silver: 0xd7d7dc,
-    text: "#f5f5f7",
-    muted: "#a1a1a6",
-    success: 0x8ee6b0,
+    background: 0x050408,
+    panel: 0x111014,
+    panelLight: 0x1c1823,
+    primary: 0x9b5cff,
+    primaryDark: 0x542790,
+    accent: 0xc9a7ff,
+    silver: 0xe0d9eb,
+    text: "#f8f5fc",
+    muted: "#aaa3b4",
+    success: 0xbda4ff,
   };
 
   const STAGES = [
@@ -328,7 +328,7 @@
         fontFamily: '-apple-system, BlinkMacSystemFont, Pretendard, sans-serif',
         fontSize: "13px",
         fontStyle: "600",
-        color: "#ff9a4d",
+        color: "#b98cff",
         letterSpacing: 3.2,
       }).setOrigin(0.5).setAlpha(0);
       const title = this.add.text(GAME_WIDTH / 2, 92, "Reveal the look.", {
@@ -337,7 +337,7 @@
         fontStyle: "700",
         color: COLORS.text,
         letterSpacing: -2.2,
-      }).setOrigin(0.5).setAlpha(0).setTint(0xffffff, 0xfff1e6, 0xffffff, 0xffc28e);
+      }).setOrigin(0.5).setAlpha(0).setTint(0xffffff, 0xf0e8ff, 0xffffff, 0xc9a7ff);
       const subtitle = this.add.text(GAME_WIDTH / 2, 137, "조각을 연결하고, 감춰진 패션 룩을 완성하세요.", {
         fontFamily: '-apple-system, BlinkMacSystemFont, Pretendard, "Noto Sans KR", sans-serif',
         fontSize: "18px",
@@ -397,7 +397,7 @@
           fontFamily: '-apple-system, BlinkMacSystemFont, Pretendard, sans-serif',
           fontSize: "12px",
           fontStyle: "600",
-          color: isCleared ? "#8ee6b0" : "#ff9a4d",
+          color: isCleared ? "#d6c7ff" : "#b98cff",
           letterSpacing: 2.4,
         }).setOrigin(0, 0.5);
         const stageTitle = this.add.text(-164, 155, stage.title.replace("Stage", "Editorial"), {
@@ -411,7 +411,7 @@
           fontFamily: '-apple-system, BlinkMacSystemFont, Pretendard, sans-serif',
           fontSize: "12px",
           fontStyle: "600",
-          color: isCleared ? "#8ee6b0" : "#d7d7dc",
+          color: isCleared ? "#d6c7ff" : "#e0d9eb",
           letterSpacing: 1.2,
         }).setOrigin(1, 0.5);
         const shimmer = this.add.rectangle(-135, -206, 70, 2, 0xffffff, 0.6).setAlpha(0.15);
@@ -473,7 +473,7 @@
 
     create() {
       configureHighResolutionCamera(this);
-      addPremiumBackground(this, this.stage.id === 1 ? COLORS.primary : 0xb7b7c2);
+      addPremiumBackground(this, this.stage.id === 1 ? COLORS.primary : 0xb399ff);
       const navPanel = this.add.graphics().setDepth(2000);
       drawRoundedPanel(navPanel, GAME_WIDTH / 2, 42, 1220, 64, {
         radius: 22,
@@ -488,7 +488,7 @@
         fontFamily: '-apple-system, BlinkMacSystemFont, Pretendard, sans-serif',
         fontSize: "11px",
         fontStyle: "600",
-        color: "#ff9a4d",
+        color: "#b98cff",
         letterSpacing: 2.3,
       }).setOrigin(0, 0.5).setDepth(2001);
       this.add.text(48, 51, this.stage.title.replace("Stage", "Editorial"), {
@@ -581,7 +581,7 @@
         board.lineBetween(boardLeft, boardTop + index * pieceHeight, boardLeft + boardWidth, boardTop + index * pieceHeight);
       }
 
-      const scanLine = this.add.rectangle(boardLeft + 4, BOARD_CENTER_Y, 2, boardHeight - 8, 0xffd0aa, 0.16)
+      const scanLine = this.add.rectangle(boardLeft + 4, BOARD_CENTER_Y, 2, boardHeight - 8, 0xd8c2ff, 0.16)
         .setDepth(-5)
         .setBlendMode(Phaser.BlendModes.ADD);
       this.tweens.add({
@@ -996,7 +996,7 @@
         fontFamily: '-apple-system, BlinkMacSystemFont, Pretendard, sans-serif',
         fontSize: "15px",
         fontStyle: "600",
-        color: "#ffb36b",
+        color: "#c9a7ff",
         letterSpacing: 2.4,
       }).setOrigin(0.5).setDepth(3000).setScale(0.55).setAlpha(0);
       this.tweens.add({ targets: pulse, scale: 5.2, alpha: 0, duration: 520, ease: "Cubic.Out", onComplete: () => pulse.destroy() });
@@ -1048,7 +1048,7 @@
         fontFamily: '-apple-system, BlinkMacSystemFont, Pretendard, sans-serif',
         fontSize: "12px",
         fontStyle: "600",
-        color: "#ff9a4d",
+        color: "#b98cff",
         letterSpacing: 2.7,
       }).setOrigin(0.5).setAlpha(0);
       const heading = this.add.text(GAME_WIDTH / 2, 83, "Look revealed.", {
@@ -1057,7 +1057,7 @@
         fontStyle: "700",
         color: COLORS.text,
         letterSpacing: -1.6,
-      }).setOrigin(0.5).setAlpha(0).setTint(0xffffff, 0xffebdc, 0xffffff, 0xffbd84);
+      }).setOrigin(0.5).setAlpha(0).setTint(0xffffff, 0xeee6ff, 0xffffff, 0xc9a7ff);
       this.tweens.add({ targets: eyebrow, alpha: 1, duration: 520, delay: 120 });
       this.tweens.add({ targets: heading, alpha: 1, y: 76, duration: 680, delay: 180, ease: "Cubic.Out" });
 

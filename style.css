@@ -82,7 +82,6 @@ body {
   outline: none;
   touch-action: none;
   image-rendering: auto;
-  filter: saturate(1.03) contrast(1.015);
   box-shadow: 0 0 80px rgba(0, 0, 0, 0.42);
 }
 

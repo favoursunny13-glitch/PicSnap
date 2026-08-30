@@ -8,7 +8,13 @@
 
   const GAME_WIDTH = 1280;
   const GAME_HEIGHT = 720;
-  const RENDER_SCALE = Math.min(Math.max(window.devicePixelRatio || 1, 1), 2);
+  const DEVICE_PIXEL_RATIO = window.devicePixelRatio || 1;
+  const SCREEN_RENDER_SCALE = Math.min(
+    (window.screen.width * DEVICE_PIXEL_RATIO) / GAME_WIDTH,
+    (window.screen.height * DEVICE_PIXEL_RATIO) / GAME_HEIGHT,
+  );
+  const RENDER_SCALE = Math.min(Math.max(SCREEN_RENDER_SCALE, 1), 3);
+  const TEXT_RESOLUTION = Math.min(Math.max(RENDER_SCALE, 2), 3);
   const GRID_SIZE = 3;
   const PIECE_COUNT = GRID_SIZE * GRID_SIZE;
   const BOARD_CENTER_X = GAME_WIDTH / 2;
@@ -35,8 +41,8 @@
     {
       id: 1,
       title: "Stage 01",
-      image: window.PICSNAP_STAGE_IMAGES?.[1] || "./assets/images/stage01.jpg?v=20260821-3",
-      thumbnail: "./assets/images/stage01.jpg?v=20260821-3",
+      image: window.PICSNAP_STAGE_IMAGES?.[1] || "./assets/images/stage01.jpg?v=20260830-1",
+      thumbnail: "./assets/images/stage01.jpg?v=20260830-1",
       useBundledImage: true,
       demoAspect: 0.72,
       palette: ["#ff7b72", "#f6c453", "#5ad7c8", "#5b8def"],
@@ -44,8 +50,8 @@
     {
       id: 2,
       title: "Stage 02",
-      image: window.PICSNAP_STAGE_IMAGES?.[2] || "./assets/images/stage02.jpg?v=20260821-3",
-      thumbnail: "./assets/images/stage02.jpg?v=20260821-3",
+      image: window.PICSNAP_STAGE_IMAGES?.[2] || "./assets/images/stage02.jpg?v=20260830-1",
+      thumbnail: "./assets/images/stage02.jpg?v=20260830-1",
       useBundledImage: true,
       demoAspect: 1.5,
       palette: ["#9b7bff", "#55c2ff", "#67df9a", "#f28cc8"],
@@ -71,6 +77,19 @@
     scene.cameras.main.setOrigin(0, 0);
     scene.cameras.main.setZoom(RENDER_SCALE);
     scene.cameras.main.setScroll(0, 0);
+  }
+
+  function sharpenTextObject(gameObject) {
+    if (gameObject?.type === "Text" && typeof gameObject.setResolution === "function") {
+      gameObject.setResolution(TEXT_RESOLUTION);
+    }
+    if (Array.isArray(gameObject?.list)) {
+      gameObject.list.forEach(sharpenTextObject);
+    }
+  }
+
+  function sharpenSceneText(scene) {
+    scene.children.list.forEach(sharpenTextObject);
   }
 
   function loadConfiguredStageImages(scene) {
@@ -282,7 +301,7 @@
       fontStyle: "600",
       color: textColor,
       letterSpacing: 0.3,
-    }).setOrigin(0.5);
+    }).setOrigin(0.5).setResolution(TEXT_RESOLUTION);
     const redraw = (hovered = false) => drawRoundedPanel(background, 0, 0, width, height, {
       radius: height / 2,
       fillColor: hovered ? (options.hoverColor || COLORS.accent) : fillColor,
@@ -443,6 +462,8 @@
         letterSpacing: 2.2,
       }).setOrigin(0.5);
 
+      sharpenSceneText(this);
+
     }
   }
 
@@ -531,6 +552,8 @@
           ease: "Cubic.Out",
         });
       });
+
+      sharpenSceneText(this);
 
     }
 
@@ -998,7 +1021,7 @@
         fontStyle: "600",
         color: "#c9a7ff",
         letterSpacing: 2.4,
-      }).setOrigin(0.5).setDepth(3000).setScale(0.55).setAlpha(0);
+      }).setOrigin(0.5).setDepth(3000).setScale(0.55).setAlpha(0).setResolution(TEXT_RESOLUTION);
       this.tweens.add({ targets: pulse, scale: 5.2, alpha: 0, duration: 520, ease: "Cubic.Out", onComplete: () => pulse.destroy() });
       this.tweens.add({
         targets: feedback,
@@ -1110,6 +1133,8 @@
         color: COLORS.muted,
         letterSpacing: 0.2,
       }).setOrigin(0.5);
+
+      sharpenSceneText(this);
 
     }
   }

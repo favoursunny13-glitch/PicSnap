@@ -15,6 +15,7 @@
   );
   const RENDER_SCALE = Math.min(Math.max(SCREEN_RENDER_SCALE, 1), 3);
   const TEXT_RESOLUTION = Math.min(Math.max(RENDER_SCALE, 2), 3);
+  const RANKING_TEXT_RESOLUTION = Math.min(Math.max(TEXT_RESOLUTION * 2, 4), 6);
   const GRID_SIZE = 3;
   const PIECE_COUNT = GRID_SIZE * GRID_SIZE;
   const BOARD_CENTER_X = GAME_WIDTH / 2;
@@ -60,7 +61,78 @@
 
   const GAME_STATE = {
     clearedStages: new Set(),
+    rankingFallback: { 1: [], 2: [] },
   };
+  const RANKING_STORAGE_KEY = "picsnap-stage-rankings-v1";
+  const MAX_RANKING_ENTRIES = 100;
+
+  function formatPuzzleTime(milliseconds) {
+    const safeMilliseconds = Math.max(0, Math.floor(milliseconds));
+    const minutes = Math.floor(safeMilliseconds / 60000);
+    const seconds = Math.floor((safeMilliseconds % 60000) / 1000);
+    const remainder = safeMilliseconds % 1000;
+    return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}:${String(remainder).padStart(3, "0")}`;
+  }
+
+  function normalizeRankingData(value) {
+    const normalized = { 1: [], 2: [] };
+    STAGES.forEach((stage) => {
+      const records = Array.isArray(value?.[stage.id]) ? value[stage.id] : [];
+      normalized[stage.id] = records
+        .filter((record) => record && typeof record.nickname === "string" && Number.isFinite(record.elapsedMs))
+        .map((record) => ({
+          id: String(record.id || ""),
+          nickname: record.nickname.trim().slice(0, 12),
+          elapsedMs: Math.max(0, Math.floor(record.elapsedMs)),
+          createdAt: Number(record.createdAt) || 0,
+        }))
+        .filter((record) => record.nickname)
+        .sort((a, b) => a.elapsedMs - b.elapsedMs || a.createdAt - b.createdAt)
+        .slice(0, MAX_RANKING_ENTRIES);
+    });
+    return normalized;
+  }
+
+  function loadRankings() {
+    try {
+      const stored = window.localStorage.getItem(RANKING_STORAGE_KEY);
+      if (stored) {
+        GAME_STATE.rankingFallback = normalizeRankingData(JSON.parse(stored));
+      }
+    } catch (error) {
+      console.warn("로컬 랭킹을 불러오지 못해 현재 세션 기록을 사용합니다.", error);
+    }
+    return GAME_STATE.rankingFallback;
+  }
+
+  function saveRanking(stageId, nickname, elapsedMs) {
+    const rankings = loadRankings();
+    const entry = {
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      nickname: nickname.trim().replace(/\s+/g, " ").slice(0, 12),
+      elapsedMs: Math.max(0, Math.floor(elapsedMs)),
+      createdAt: Date.now(),
+    };
+    rankings[stageId] = [...(rankings[stageId] || []), entry]
+      .sort((a, b) => a.elapsedMs - b.elapsedMs || a.createdAt - b.createdAt)
+      .slice(0, MAX_RANKING_ENTRIES);
+    GAME_STATE.rankingFallback = rankings;
+    try {
+      window.localStorage.setItem(RANKING_STORAGE_KEY, JSON.stringify(rankings));
+    } catch (error) {
+      console.warn("로컬 랭킹을 저장하지 못해 현재 세션에만 기록합니다.", error);
+    }
+    return entry;
+  }
+
+  function clearRankings() {
+    GAME_STATE.rankingFallback = normalizeRankingData({});
+    try {
+      window.localStorage.removeItem(RANKING_STORAGE_KEY);
+    } catch (error) {
+      console.warn("로컬 랭킹 저장소를 초기화하지 못했습니다.", error);
+    }
+  }
 
   function stageTextureKey(stageId) {
     return `stage-${stageId}`;
@@ -90,6 +162,15 @@
 
   function sharpenSceneText(scene) {
     scene.children.list.forEach(sharpenTextObject);
+  }
+
+  function sharpenRankingTextObject(gameObject) {
+    if (gameObject?.type === "Text" && typeof gameObject.setResolution === "function") {
+      gameObject.setResolution(RANKING_TEXT_RESOLUTION);
+    }
+    if (Array.isArray(gameObject?.list)) {
+      gameObject.list.forEach(sharpenRankingTextObject);
+    }
   }
 
   function loadConfiguredStageImages(scene) {
@@ -200,59 +281,48 @@
     scene.cameras.main.setBackgroundColor(COLORS.background);
     scene.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, COLORS.background, 1).setDepth(-100);
 
-    const leftGlow = scene.add.circle(-40, 190, 390, accentColor, 0.115)
+    const leftGlow = scene.add.circle(-210, 190, 390, accentColor, 0)
       .setBlendMode(Phaser.BlendModes.ADD)
       .setDepth(-90);
-    const rightGlow = scene.add.circle(1320, 530, 440, 0x777780, 0.095)
+    const rightGlow = scene.add.circle(1490, 530, 440, 0x777780, 0)
       .setBlendMode(Phaser.BlendModes.ADD)
       .setDepth(-90);
     scene.tweens.add({
       targets: leftGlow,
-      x: 65,
-      y: 235,
-      scale: 1.16,
-      alpha: 0.065,
-      duration: 6200,
-      ease: "Sine.InOut",
-      yoyo: true,
-      repeat: -1,
+      x: -40,
+      alpha: 0.115,
+      duration: 1050,
+      ease: "Cubic.Out",
+      onComplete: () => scene.tweens.add({
+        targets: leftGlow,
+        x: 65,
+        y: 235,
+        scale: 1.16,
+        alpha: 0.065,
+        duration: 6200,
+        ease: "Sine.InOut",
+        yoyo: true,
+        repeat: -1,
+      }),
     });
     scene.tweens.add({
       targets: rightGlow,
-      x: 1195,
-      y: 475,
-      scale: 0.88,
-      duration: 7600,
-      ease: "Sine.InOut",
-      yoyo: true,
-      repeat: -1,
+      x: 1320,
+      alpha: 0.095,
+      duration: 1150,
+      delay: 90,
+      ease: "Cubic.Out",
+      onComplete: () => scene.tweens.add({
+        targets: rightGlow,
+        x: 1195,
+        y: 475,
+        scale: 0.88,
+        duration: 7600,
+        ease: "Sine.InOut",
+        yoyo: true,
+        repeat: -1,
+      }),
     });
-
-    const edgeDetails = scene.add.graphics().setDepth(-70);
-    edgeDetails.lineStyle(1, accentColor, 0.22);
-    edgeDetails.lineBetween(24, 96, 24, 286);
-    edgeDetails.lineBetween(24, 434, 24, 624);
-    edgeDetails.strokeCircle(-95, GAME_HEIGHT / 2, 315);
-    edgeDetails.lineStyle(1, 0xd7d7dc, 0.14);
-    edgeDetails.lineBetween(GAME_WIDTH - 24, 96, GAME_WIDTH - 24, 286);
-    edgeDetails.lineBetween(GAME_WIDTH - 24, 434, GAME_WIDTH - 24, 624);
-    edgeDetails.strokeCircle(GAME_WIDTH + 110, GAME_HEIGHT / 2, 340);
-    edgeDetails.fillStyle(accentColor, 0.58);
-    edgeDetails.fillCircle(24, 360, 2.5);
-    edgeDetails.fillCircle(GAME_WIDTH - 24, 360, 2.5);
-
-    scene.add.text(23, GAME_HEIGHT / 2, "FASHION  /  IMAGE  /  PLAY", {
-      fontFamily: '-apple-system, BlinkMacSystemFont, Pretendard, sans-serif',
-      fontSize: "9px",
-      color: "#8a8a90",
-      letterSpacing: 2.1,
-    }).setOrigin(0.5).setAngle(-90).setDepth(-60).setAlpha(0.58);
-    scene.add.text(GAME_WIDTH - 23, GAME_HEIGHT / 2, "PICSNAP  /  EDITORIAL", {
-      fontFamily: '-apple-system, BlinkMacSystemFont, Pretendard, sans-serif',
-      fontSize: "9px",
-      color: "#8a8a90",
-      letterSpacing: 2.1,
-    }).setOrigin(0.5).setAngle(90).setDepth(-60).setAlpha(0.58);
 
     for (let index = 0; index < 18; index += 1) {
       const dot = scene.add.circle(
@@ -262,14 +332,24 @@
         index % 4 === 0 ? accentColor : 0xffffff,
         index % 4 === 0 ? 0.28 : 0.11,
       ).setDepth(-80);
+      const targetAlpha = dot.alpha;
+      dot.setAlpha(0).setScale(0.2);
       scene.tweens.add({
         targets: dot,
-        y: dot.y - 18 - (index % 4) * 5,
-        alpha: dot.alpha * 0.35,
-        duration: 2400 + index * 170,
-        ease: "Sine.InOut",
-        yoyo: true,
-        repeat: -1,
+        alpha: targetAlpha,
+        scale: 1,
+        duration: 420,
+        delay: 330 + index * 38,
+        ease: "Back.Out",
+        onComplete: () => scene.tweens.add({
+          targets: dot,
+          y: dot.y - 18 - (index % 4) * 5,
+          alpha: targetAlpha * 0.35,
+          duration: 2400 + index * 170,
+          ease: "Sine.InOut",
+          yoyo: true,
+          repeat: -1,
+        }),
       });
     }
   }
@@ -330,6 +410,260 @@
     return container;
   }
 
+  function showNicknamePrompt(scene, elapsedMs, onSubmit) {
+    const overlay = document.createElement("div");
+    overlay.className = "nickname-modal";
+    const wasSceneInputEnabled = scene.input.enabled;
+    scene.input.enabled = false;
+
+    const stopGameInput = (event) => event.stopPropagation();
+    ["pointerdown", "pointerup", "click", "dblclick", "contextmenu", "wheel"].forEach((eventName) => {
+      overlay.addEventListener(eventName, stopGameInput);
+    });
+
+    const panel = document.createElement("section");
+    panel.className = "nickname-panel";
+    panel.setAttribute("role", "dialog");
+    panel.setAttribute("aria-modal", "true");
+    panel.setAttribute("aria-labelledby", "nickname-title");
+
+    const eyebrow = document.createElement("p");
+    eyebrow.className = "nickname-eyebrow";
+    eyebrow.textContent = `FINAL TIME  /  ${formatPuzzleTime(elapsedMs)}`;
+
+    const title = document.createElement("h2");
+    title.id = "nickname-title";
+    title.textContent = "기록에 남길 이름";
+
+    const description = document.createElement("p");
+    description.className = "nickname-description";
+    description.textContent = "이 브라우저의 스테이지 랭킹에 표시됩니다.";
+
+    const input = document.createElement("input");
+    input.className = "nickname-input";
+    input.type = "text";
+    input.maxLength = 12;
+    input.autocomplete = "nickname";
+    input.placeholder = "닉네임을 입력하세요";
+    input.setAttribute("aria-label", "랭킹 닉네임");
+
+    const error = document.createElement("p");
+    error.className = "nickname-error";
+    error.textContent = "1자 이상의 닉네임을 입력해 주세요.";
+
+    const actions = document.createElement("div");
+    actions.className = "nickname-actions";
+    const cancelButton = document.createElement("button");
+    cancelButton.type = "button";
+    cancelButton.className = "nickname-button nickname-button-secondary";
+    cancelButton.textContent = "나중에 하기";
+    const submitButton = document.createElement("button");
+    submitButton.type = "button";
+    submitButton.className = "nickname-button nickname-button-primary";
+    submitButton.textContent = "기록 등록";
+    actions.append(cancelButton, submitButton);
+    panel.append(eyebrow, title, description, input, error, actions);
+    overlay.append(panel);
+    document.body.append(overlay);
+
+    let closed = false;
+    const cleanup = () => {
+      if (closed) return;
+      closed = true;
+      scene.events.off(Phaser.Scenes.Events.SHUTDOWN, cleanup);
+      overlay.remove();
+      window.requestAnimationFrame(() => {
+        if (scene.sys?.isActive()) {
+          scene.input.enabled = wasSceneInputEnabled;
+        }
+      });
+    };
+    const submit = () => {
+      const nickname = input.value.trim().replace(/\s+/g, " ").slice(0, 12);
+      if (!nickname) {
+        panel.classList.add("is-invalid");
+        input.focus();
+        return;
+      }
+      cleanup();
+      onSubmit(nickname);
+    };
+    input.addEventListener("input", () => panel.classList.remove("is-invalid"));
+    input.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") submit();
+      if (event.key === "Escape") cleanup();
+    });
+    cancelButton.addEventListener("click", cleanup);
+    submitButton.addEventListener("click", submit);
+    scene.events.once(Phaser.Scenes.Events.SHUTDOWN, cleanup);
+    window.requestAnimationFrame(() => input.focus());
+  }
+
+  function showRankingPanel(scene, initialStageId = 1, options = {}) {
+    const createdObjects = [];
+    const addObject = (object) => {
+      createdObjects.push(object);
+      return object;
+    };
+    const dimmer = addObject(scene.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0x020104, 0.82)
+      .setDepth(9000)
+      .setInteractive());
+    const panel = addObject(scene.add.graphics().setDepth(9001));
+    drawRoundedPanel(panel, GAME_WIDTH / 2, 360, 790, 570, {
+      radius: 34,
+      fillColor: 0x0d0a12,
+      fillAlpha: 0.98,
+      strokeColor: COLORS.primary,
+      strokeAlpha: 0.72,
+      lineWidth: 2,
+      shadowAlpha: 0.72,
+      highlightAlpha: 0.28,
+    });
+    addObject(scene.add.text(300, 103, options.title || "STAGE RANKING", {
+      fontFamily: '-apple-system, BlinkMacSystemFont, Pretendard, sans-serif',
+      fontSize: "13px",
+      fontStyle: "700",
+      color: "#b98cff",
+      letterSpacing: 2.8,
+    }).setDepth(9002));
+    addObject(scene.add.text(300, 139, "Fastest reveals.", {
+      fontFamily: '-apple-system, BlinkMacSystemFont, Pretendard, sans-serif',
+      fontSize: "32px",
+      fontStyle: "700",
+      color: COLORS.text,
+      letterSpacing: -1,
+    }).setDepth(9002));
+    addObject(scene.add.text(980, 139, "LOCAL ARCHIVE", {
+      fontFamily: '-apple-system, BlinkMacSystemFont, Pretendard, sans-serif',
+      fontSize: "10px",
+      fontStyle: "600",
+      color: COLORS.muted,
+      letterSpacing: 1.5,
+    }).setOrigin(1, 0.5).setDepth(9002));
+
+    let selectedStageId = initialStageId;
+    let rowObjects = [];
+    let tabButtons = [];
+    let isPanelActive = true;
+    let developerResetHandler = null;
+    const clearRows = () => {
+      rowObjects.forEach((object) => object.destroy());
+      rowObjects = [];
+    };
+    const drawRows = () => {
+      clearRows();
+      const sharpenRows = () => rowObjects.forEach(sharpenRankingTextObject);
+      const rankings = loadRankings()[selectedStageId] || [];
+      const headers = [
+        scene.add.text(332, 235, "RANK", { fontFamily: "Arial, sans-serif", fontSize: "10px", color: "#777080", letterSpacing: 1.5 }),
+        scene.add.text(430, 235, "NICKNAME", { fontFamily: "Arial, sans-serif", fontSize: "10px", color: "#777080", letterSpacing: 1.5 }),
+        scene.add.text(948, 235, "TIME", { fontFamily: "Arial, sans-serif", fontSize: "10px", color: "#777080", letterSpacing: 1.5 }).setOrigin(1, 0),
+      ];
+      headers.forEach((header) => header.setDepth(9003));
+      rowObjects.push(...headers);
+
+      if (!rankings.length) {
+        rowObjects.push(scene.add.text(GAME_WIDTH / 2, 405, "아직 등록된 기록이 없습니다.\n첫 번째 기록의 주인공이 되어보세요.", {
+          fontFamily: '-apple-system, BlinkMacSystemFont, Pretendard, "Noto Sans KR", sans-serif',
+          fontSize: "18px",
+          fontStyle: "500",
+          color: "#c5bdce",
+          align: "center",
+          lineSpacing: 9,
+        }).setOrigin(0.5).setDepth(9003));
+        sharpenRows();
+        return;
+      }
+
+      const rankedRecords = rankings.map((record, index) => ({ record, rank: index + 1 }));
+      const highlightedIndex = rankedRecords.findIndex(({ record }) => record.id === options.highlightId);
+      const visibleRecords = highlightedIndex >= 8
+        ? [...rankedRecords.slice(0, 7), rankedRecords[highlightedIndex]]
+        : rankedRecords.slice(0, 8);
+      visibleRecords.forEach(({ record, rank: actualRank }, index) => {
+        const y = 283 + index * 43;
+        const isHighlighted = record.id === options.highlightId;
+        const rowBackground = scene.add.rectangle(GAME_WIDTH / 2, y, 650, 36, isHighlighted ? COLORS.primary : 0xffffff, isHighlighted ? 0.16 : 0.025)
+          .setStrokeStyle(1, isHighlighted ? COLORS.accent : 0xffffff, isHighlighted ? 0.48 : 0.04)
+          .setDepth(9002);
+        const rank = scene.add.text(348, y, String(actualRank).padStart(2, "0"), {
+          fontFamily: '"SFMono-Regular", Consolas, monospace', fontSize: "13px", fontStyle: "700", color: index < 3 ? "#c9a7ff" : "#8d8795",
+        }).setOrigin(0.5).setDepth(9003);
+        const nickname = scene.add.text(430, y, record.nickname, {
+          fontFamily: '-apple-system, BlinkMacSystemFont, Pretendard, "Noto Sans KR", sans-serif', fontSize: "15px", fontStyle: isHighlighted ? "700" : "500", color: COLORS.text,
+        }).setOrigin(0, 0.5).setDepth(9003);
+        const time = scene.add.text(948, y, formatPuzzleTime(record.elapsedMs), {
+          fontFamily: '"SFMono-Regular", Consolas, monospace', fontSize: "14px", fontStyle: "700", color: isHighlighted ? "#d9c4ff" : "#c6bfcb", letterSpacing: 0.8,
+        }).setOrigin(1, 0.5).setDepth(9003);
+        rowObjects.push(rowBackground, rank, nickname, time);
+      });
+      sharpenRows();
+    };
+    const drawTabs = () => {
+      tabButtons.forEach((button) => button.destroy());
+      const tabWidth = 185;
+      const tabGap = 20;
+      const tabGroupWidth = STAGES.length * tabWidth + (STAGES.length - 1) * tabGap;
+      const firstTabX = GAME_WIDTH / 2 - tabGroupWidth / 2 + tabWidth / 2;
+      tabButtons = STAGES.map((stage, index) => {
+        const selected = stage.id === selectedStageId;
+        return addButton(scene, firstTabX + index * (tabWidth + tabGap), 194, tabWidth, 38, `LOOK ${String(stage.id).padStart(2, "0")}`, () => {
+          selectedStageId = stage.id;
+          drawTabs();
+          drawRows();
+        }, {
+          fillColor: selected ? COLORS.primary : COLORS.panelLight,
+          hoverColor: selected ? COLORS.accent : COLORS.primaryDark,
+          textColor: selected ? "#09070c" : COLORS.text,
+          strokeColor: selected ? COLORS.accent : 0xffffff,
+          fontSize: "11px",
+        }).setDepth(9004);
+      });
+      createdObjects.push(...tabButtons);
+      tabButtons.forEach(sharpenRankingTextObject);
+    };
+    const closePanel = () => {
+      if (!isPanelActive) return;
+      isPanelActive = false;
+      if (developerResetHandler) {
+        window.removeEventListener("keydown", developerResetHandler);
+      }
+      scene.events.off(Phaser.Scenes.Events.SHUTDOWN, closePanel);
+      clearRows();
+      [...new Set(createdObjects)].forEach((object) => object?.active && object.destroy());
+    };
+    if (scene.scene.key === "MenuScene") {
+      developerResetHandler = (event) => {
+        const hasModifier = event.shiftKey || event.ctrlKey || event.altKey || event.metaKey;
+        if (!isPanelActive || event.repeat || hasModifier || event.code !== "Backquote") return;
+        event.preventDefault();
+        clearRankings();
+        drawRows();
+      };
+      window.addEventListener("keydown", developerResetHandler);
+    }
+    scene.events.once(Phaser.Scenes.Events.SHUTDOWN, closePanel);
+    addObject(addButton(scene, 966, 104, 72, 34, "CLOSE", closePanel, {
+      fillColor: COLORS.panelLight,
+      hoverColor: COLORS.primaryDark,
+      textColor: COLORS.text,
+      strokeColor: 0xffffff,
+      fontSize: "10px",
+    }).setDepth(9005));
+    addObject(scene.add.text(GAME_WIDTH / 2, 620, "기록은 현재 브라우저에 스테이지별로 저장됩니다.", {
+      fontFamily: '-apple-system, BlinkMacSystemFont, Pretendard, "Noto Sans KR", sans-serif',
+      fontSize: "11px",
+      color: "#716a79",
+      letterSpacing: 0.2,
+    }).setOrigin(0.5).setDepth(9002));
+    drawTabs();
+    drawRows();
+    sharpenSceneText(scene);
+    createdObjects.forEach(sharpenRankingTextObject);
+    rowObjects.forEach(sharpenRankingTextObject);
+    return { close: closePanel };
+  }
+
   class MenuScene extends Phaser.Scene {
     constructor() {
       super("MenuScene");
@@ -366,6 +700,14 @@
       this.tweens.add({ targets: eyebrow, alpha: 1, y: 42, duration: 650, ease: "Cubic.Out" });
       this.tweens.add({ targets: title, alpha: 1, y: 84, duration: 760, delay: 90, ease: "Cubic.Out" });
       this.tweens.add({ targets: subtitle, alpha: 1, duration: 700, delay: 180, ease: "Cubic.Out" });
+
+      addButton(this, 1160, 44, 166, 42, "VIEW RANKING", () => showRankingPanel(this, 1), {
+        fillColor: COLORS.panelLight,
+        hoverColor: COLORS.primaryDark,
+        textColor: COLORS.text,
+        strokeColor: COLORS.primary,
+        fontSize: "11px",
+      }).setDepth(100);
 
       const cardWidth = 390;
       const cardHeight = 430;
@@ -475,6 +817,10 @@
       this.dragState = null;
       this.isSwapping = false;
       this.isClearing = false;
+      this.timerStartedAt = 0;
+      this.elapsedMs = 0;
+      this.timerText = null;
+      this.timerEvent = null;
     }
 
     init(data) {
@@ -484,6 +830,10 @@
       this.dragState = null;
       this.isSwapping = false;
       this.isClearing = false;
+      this.timerStartedAt = performance.now();
+      this.elapsedMs = 0;
+      this.timerText = null;
+      this.timerEvent = null;
     }
 
     preload() {
@@ -530,6 +880,39 @@
         hoverColor: COLORS.primaryDark,
         fontSize: "12px",
       }).setDepth(2002);
+
+      const timerPanel = this.add.graphics().setDepth(2000);
+      drawRoundedPanel(timerPanel, GAME_WIDTH / 2, 111, 232, 54, {
+        radius: 20,
+        fillColor: 0x0d0a12,
+        fillAlpha: 0.94,
+        strokeColor: COLORS.primary,
+        strokeAlpha: 0.62,
+        lineWidth: 1.5,
+        shadowAlpha: 0.42,
+        highlightAlpha: 0.24,
+      });
+      this.add.text(GAME_WIDTH / 2, 98, "PUZZLE TIME", {
+        fontFamily: '-apple-system, BlinkMacSystemFont, Pretendard, sans-serif',
+        fontSize: "9px",
+        fontStyle: "700",
+        color: "#9f7ad9",
+        letterSpacing: 2.1,
+      }).setOrigin(0.5).setDepth(2001);
+      this.timerText = this.add.text(GAME_WIDTH / 2, 119, formatPuzzleTime(0), {
+        fontFamily: '"SFMono-Regular", Consolas, monospace',
+        fontSize: "20px",
+        fontStyle: "700",
+        color: "#f6f0ff",
+        letterSpacing: 1.4,
+      }).setOrigin(0.5).setDepth(2001).setResolution(TEXT_RESOLUTION);
+      const updateTimer = () => {
+        if (this.isClearing) return;
+        this.elapsedMs = Math.max(0, performance.now() - this.timerStartedAt);
+        this.timerText.setText(formatPuzzleTime(this.elapsedMs));
+      };
+      updateTimer();
+      this.timerEvent = this.time.addEvent({ delay: 16, loop: true, callback: updateTimer });
 
       const textureKey = ensureStageTexture(this, this.stage);
       this.boardLayout = this.calculateBoardLayout(textureKey);
@@ -1012,10 +1395,10 @@
     }
 
     showSwapFeedback(label = "SNAPPED") {
-      const pulse = this.add.circle(GAME_WIDTH / 2, 116, 18, COLORS.primary, 0.22)
+      const pulse = this.add.circle(1030, 116, 18, COLORS.primary, 0.22)
         .setDepth(2999)
         .setBlendMode(Phaser.BlendModes.ADD);
-      const feedback = this.add.text(GAME_WIDTH / 2, 116, label, {
+      const feedback = this.add.text(1030, 116, label, {
         fontFamily: '-apple-system, BlinkMacSystemFont, Pretendard, sans-serif',
         fontSize: "15px",
         fontStyle: "600",
@@ -1038,11 +1421,14 @@
     checkSlotClearCondition() {
       const isComplete = this.pieces.every((piece) => piece.pieceData.currentSlot === piece.pieceData.id);
       if (isComplete) {
+        this.elapsedMs = Math.max(0, performance.now() - this.timerStartedAt);
+        this.timerEvent?.remove(false);
+        this.timerText?.setText(formatPuzzleTime(this.elapsedMs));
         this.isClearing = true;
         this.input.enabled = false;
         GAME_STATE.clearedStages.add(this.stage.id);
         this.time.delayedCall(450, () => {
-          this.scene.start("ClearScene", { stageId: this.stage.id });
+          this.scene.start("ClearScene", { stageId: this.stage.id, elapsedMs: Math.floor(this.elapsedMs) });
         });
       }
     }
@@ -1055,6 +1441,7 @@
 
     init(data) {
       this.stage = getStage(data.stageId);
+      this.elapsedMs = Math.max(0, Math.floor(Number(data.elapsedMs) || 0));
     }
 
     preload() {
@@ -1067,31 +1454,53 @@
       configureHighResolutionCamera(this);
       addPremiumBackground(this, COLORS.primary);
       const textureKey = ensureStageTexture(this, this.stage);
-      const eyebrow = this.add.text(GAME_WIDTH / 2, 38, `EDITORIAL  ${String(this.stage.id).padStart(2, "0")}  /  COMPLETE`, {
+      const eyebrow = this.add.text(GAME_WIDTH / 2, 28, `EDITORIAL  ${String(this.stage.id).padStart(2, "0")}  /  COMPLETE`, {
         fontFamily: '-apple-system, BlinkMacSystemFont, Pretendard, sans-serif',
         fontSize: "12px",
         fontStyle: "600",
         color: "#b98cff",
         letterSpacing: 2.7,
       }).setOrigin(0.5).setAlpha(0);
-      const heading = this.add.text(GAME_WIDTH / 2, 83, "Look revealed.", {
+      const heading = this.add.text(GAME_WIDTH / 2, 69, "Look revealed.", {
         fontFamily: '-apple-system, BlinkMacSystemFont, Pretendard, sans-serif',
-        fontSize: "46px",
+        fontSize: "42px",
         fontStyle: "700",
         color: COLORS.text,
         letterSpacing: -1.6,
       }).setOrigin(0.5).setAlpha(0).setTint(0xffffff, 0xeee6ff, 0xffffff, 0xc9a7ff);
       this.tweens.add({ targets: eyebrow, alpha: 1, duration: 520, delay: 120 });
-      this.tweens.add({ targets: heading, alpha: 1, y: 76, duration: 680, delay: 180, ease: "Cubic.Out" });
+      this.tweens.add({ targets: heading, alpha: 1, y: 63, duration: 680, delay: 180, ease: "Cubic.Out" });
+      this.add.text(1220, 28, "FINAL TIME", {
+        fontFamily: '-apple-system, BlinkMacSystemFont, Pretendard, sans-serif',
+        fontSize: "9px",
+        fontStyle: "700",
+        color: "#8f729f",
+        letterSpacing: 1.8,
+      }).setOrigin(1, 0.5);
+      this.add.text(1220, 50, formatPuzzleTime(this.elapsedMs), {
+        fontFamily: '"SFMono-Regular", Consolas, monospace',
+        fontSize: "17px",
+        fontStyle: "700",
+        color: "#d9c4ff",
+        letterSpacing: 1.1,
+      }).setOrigin(1, 0.5).setResolution(TEXT_RESOLUTION);
 
       const source = this.textures.get(textureKey).getSourceImage();
       const sourceWidth = source.naturalWidth || source.width;
       const sourceHeight = source.naturalHeight || source.height;
-      const maxWidth = 820;
-      const maxHeight = 455;
+      const imageCenterX = GAME_WIDTH / 2;
+      const imageCenterY = 362;
+      const maxWidth = 1040;
+      const maxHeight = 510;
       const scale = Math.min(maxWidth / sourceWidth, maxHeight / sourceHeight);
+      const imageWidth = sourceWidth * scale;
+      const imageHeight = sourceHeight * scale;
+      const imageLeft = imageCenterX - imageWidth / 2;
+      const imageRight = imageCenterX + imageWidth / 2;
+      const imageTop = imageCenterY - imageHeight / 2;
+      const imageBottom = imageCenterY + imageHeight / 2;
       const frame = this.add.graphics().setAlpha(0);
-      drawRoundedPanel(frame, GAME_WIDTH / 2, 348, sourceWidth * scale + 30, sourceHeight * scale + 30, {
+      drawRoundedPanel(frame, imageCenterX, imageCenterY, imageWidth + 30, imageHeight + 30, {
         radius: 30,
         fillColor: 0x090909,
         fillAlpha: 0.96,
@@ -1101,22 +1510,100 @@
         shadowAlpha: 0.58,
         highlightAlpha: 0.28,
       });
-      const image = this.add.image(GAME_WIDTH / 2, 348, textureKey)
+      const image = this.add.image(imageCenterX, imageCenterY, textureKey)
         .setScale(scale * 0.9)
         .setAlpha(0);
-      const flash = this.add.rectangle(GAME_WIDTH / 2, 348, sourceWidth * scale, sourceHeight * scale, 0xffffff, 0).setDepth(20);
+      const flash = this.add.rectangle(imageCenterX, imageCenterY, imageWidth, imageHeight, 0xffffff, 0).setDepth(20);
+
+      const maxZoomFactor = 2;
+      const zoomState = { factor: 1 };
+      const zoomImage = this.add.image(imageCenterX, imageCenterY, textureKey)
+        .setScale(scale)
+        .setCrop(0, 0, sourceWidth, sourceHeight)
+        .setAlpha(0)
+        .setDepth(12);
+
+      let isZooming = false;
+      let zoomPointer = null;
+      let cursorBeforeZoom = "";
+      const updateZoomFocus = (pointer) => {
+        zoomPointer = pointer;
+        const zoomFactor = zoomState.factor;
+        const zoomCropWidth = sourceWidth / zoomFactor;
+        const zoomCropHeight = sourceHeight / zoomFactor;
+        const focusX = Phaser.Math.Clamp(pointer.worldX, imageLeft, imageRight);
+        const focusY = Phaser.Math.Clamp(pointer.worldY, imageTop, imageBottom);
+        const sourceFocusX = ((focusX - imageLeft) / imageWidth) * sourceWidth;
+        const sourceFocusY = ((focusY - imageTop) / imageHeight) * sourceHeight;
+        const cropCenterX = Phaser.Math.Clamp(sourceFocusX, zoomCropWidth / 2, sourceWidth - zoomCropWidth / 2);
+        const cropCenterY = Phaser.Math.Clamp(sourceFocusY, zoomCropHeight / 2, sourceHeight - zoomCropHeight / 2);
+        zoomImage.setCrop(
+          cropCenterX - zoomCropWidth / 2,
+          cropCenterY - zoomCropHeight / 2,
+          zoomCropWidth,
+          zoomCropHeight,
+        );
+        zoomImage.setScale(scale * zoomFactor);
+        zoomImage.setPosition(
+          imageCenterX + (sourceWidth / 2 - cropCenterX) * scale * zoomFactor,
+          imageCenterY + (sourceHeight / 2 - cropCenterY) * scale * zoomFactor,
+        );
+      };
+      const beginZoom = (pointer) => {
+        if (image.alpha < 0.95) return;
+        isZooming = true;
+        cursorBeforeZoom = this.game.canvas.style.cursor;
+        this.game.canvas.style.cursor = "none";
+        zoomImage.setAlpha(1);
+        updateZoomFocus(pointer);
+        this.tweens.killTweensOf(zoomState);
+        this.tweens.add({
+          targets: zoomState,
+          factor: maxZoomFactor,
+          duration: 200,
+          ease: "Sine.InOut",
+          onUpdate: () => updateZoomFocus(zoomPointer),
+        });
+      };
+      const endZoom = () => {
+        if (!isZooming) return;
+        isZooming = false;
+        this.game.canvas.style.cursor = cursorBeforeZoom || "default";
+        this.tweens.killTweensOf(zoomState);
+        this.tweens.add({
+          targets: zoomState,
+          factor: 1,
+          duration: 200,
+          ease: "Sine.InOut",
+          onUpdate: () => updateZoomFocus(zoomPointer),
+          onComplete: () => {
+            zoomImage.setAlpha(0);
+            zoomImage.setScale(scale).setPosition(imageCenterX, imageCenterY);
+            zoomImage.setCrop(0, 0, sourceWidth, sourceHeight);
+          },
+        });
+      };
+
+      image.setInteractive();
+      image.on("pointerdown", beginZoom);
+      this.input.on("pointermove", (pointer) => {
+        if (isZooming) updateZoomFocus(pointer);
+      });
+      this.input.on("pointerup", endZoom);
+      this.input.on("gameout", endZoom);
+
       this.tweens.add({ targets: frame, alpha: 1, duration: 520, delay: 220 });
       this.tweens.add({ targets: image, alpha: 1, scale, duration: 760, delay: 220, ease: "Back.Out" });
       this.tweens.add({ targets: flash, alpha: 0.3, duration: 130, delay: 330, yoyo: true, ease: "Sine.Out" });
 
       for (let index = 0; index < 24; index += 1) {
         const angle = (Math.PI * 2 * index) / 24;
-        const particle = this.add.circle(GAME_WIDTH / 2, 348, index % 4 === 0 ? 3 : 1.5, index % 3 === 0 ? COLORS.primary : COLORS.silver, 0)
+        const particle = this.add.circle(imageCenterX, imageCenterY, index % 4 === 0 ? 3 : 1.5, index % 3 === 0 ? COLORS.primary : COLORS.silver, 0)
           .setBlendMode(Phaser.BlendModes.ADD);
         this.tweens.add({
           targets: particle,
-          x: GAME_WIDTH / 2 + Math.cos(angle) * (360 + (index % 5) * 22),
-          y: 348 + Math.sin(angle) * (215 + (index % 4) * 18),
+          x: imageCenterX + Math.cos(angle) * (410 + (index % 5) * 22),
+          y: imageCenterY + Math.sin(angle) * (235 + (index % 4) * 18),
           alpha: { from: 0.85, to: 0 },
           scale: { from: 1, to: 0.2 },
           duration: 900 + (index % 6) * 90,
@@ -1126,12 +1613,38 @@
         });
       }
 
-      addButton(this, GAME_WIDTH / 2, 665, 260, 52, "BACK TO COLLECTION", () => this.scene.start("MenuScene"), { fontSize: "12px" });
-      this.add.text(GAME_WIDTH / 2, 621, "원본 화질로 공개된 패션 룩", {
+      addButton(this, 505, 682, 230, 46, "BACK TO COLLECTION", () => this.scene.start("MenuScene"), {
+        fillColor: COLORS.panelLight,
+        hoverColor: COLORS.primaryDark,
+        textColor: COLORS.text,
+        strokeColor: 0xffffff,
+        fontSize: "11px",
+      });
+      let savedEntry = null;
+      const recordButton = addButton(this, 775, 682, 230, 46, "SAVE MY RECORD", () => {
+        if (savedEntry) {
+          showRankingPanel(this, this.stage.id, { title: "YOUR RESULT", highlightId: savedEntry.id });
+          return;
+        }
+        showNicknamePrompt(this, this.elapsedMs, (nickname) => {
+          savedEntry = saveRanking(this.stage.id, nickname, this.elapsedMs);
+          const buttonText = recordButton.list.find((child) => child.type === "Text");
+          buttonText?.setText("VIEW MY RANK");
+          showRankingPanel(this, this.stage.id, { title: "YOUR RESULT", highlightId: savedEntry.id });
+        });
+      }, {
+        fillColor: COLORS.primary,
+        hoverColor: COLORS.accent,
+        textColor: "#09070c",
+        strokeColor: COLORS.accent,
+        fontSize: "11px",
+      });
+      this.add.text(GAME_WIDTH / 2, 642, "PRESS & HOLD TO ZOOM  ·  MOVE TO EXPLORE", {
         fontFamily: '-apple-system, BlinkMacSystemFont, Pretendard, "Noto Sans KR", sans-serif',
-        fontSize: "14px",
-        color: COLORS.muted,
-        letterSpacing: 0.2,
+        fontSize: "11px",
+        fontStyle: "600",
+        color: "#b98cff",
+        letterSpacing: 1.45,
       }).setOrigin(0.5);
 
       sharpenSceneText(this);

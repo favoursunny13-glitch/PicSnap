@@ -271,6 +271,7 @@ window.addEventListener("keydown", (event) => {
   event.preventDefault();
   if (++debugKeyPresses < 5) return;
   debugMode = true;
+  document.body.classList.add("debug-mode");
   $("start-camera").textContent = "디버그 방명록 남기기";
   updateControls();
   startDebugEntry();

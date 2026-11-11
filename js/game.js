@@ -24,6 +24,8 @@
   const MAX_BOARD_HEIGHT = 470;
   const PIECE_GAP = 8;
   const PIECE_CORNER_RADIUS = 14;
+  const STAGE_PREVIEW_WIDTH = 326;
+  const STAGE_PREVIEW_HEIGHT = 284;
 
   const COLORS = {
     background: 0x050408,
@@ -42,29 +44,35 @@
     {
       id: 1,
       title: "Stage 01",
-      image: window.PICSNAP_STAGE_IMAGES?.[1] || "./assets/images/stage01.jpg?v=20260830-1",
-      thumbnail: "./assets/images/stage01.jpg?v=20260830-1",
+      image: "./assets/images/stage01.jpg?v=20261111-1",
       useBundledImage: true,
-      demoAspect: 0.72,
+      demoAspect: 4255 / 6383,
       palette: ["#ff7b72", "#f6c453", "#5ad7c8", "#5b8def"],
     },
     {
       id: 2,
       title: "Stage 02",
-      image: window.PICSNAP_STAGE_IMAGES?.[2] || "./assets/images/stage02.jpg?v=20260830-1",
-      thumbnail: "./assets/images/stage02.jpg?v=20260830-1",
+      image: "./assets/images/stage02.jpg?v=20261111-1",
       useBundledImage: true,
       demoAspect: 1.5,
       palette: ["#9b7bff", "#55c2ff", "#67df9a", "#f28cc8"],
     },
+    {
+      id: 3,
+      title: "Stage 03",
+      image: "./assets/images/stage03.jpg?v=20261111-1",
+      useBundledImage: true,
+      demoAspect: 4279 / 6383,
+      palette: ["#204961", "#cf83a8", "#71b1bc", "#a3b5c8"],
+    },
   ];
 
-  const GAME_STATE = {
-    clearedStages: new Set(),
-    rankingFallback: { 1: [], 2: [] },
-  };
   const RANKING_STORAGE_KEY = "picsnap-stage-rankings-v1";
   const MAX_RANKING_ENTRIES = 100;
+  const GAME_STATE = {
+    clearedStages: new Set(),
+    rankingFallback: normalizeRankingData({}),
+  };
 
   function formatPuzzleTime(milliseconds) {
     const safeMilliseconds = Math.max(0, Math.floor(milliseconds));
@@ -75,7 +83,7 @@
   }
 
   function normalizeRankingData(value) {
-    const normalized = { 1: [], 2: [] };
+    const normalized = {};
     STAGES.forEach((stage) => {
       const records = Array.isArray(value?.[stage.id]) ? value[stage.id] : [];
       normalized[stage.id] = records
@@ -151,26 +159,9 @@
     scene.cameras.main.setScroll(0, 0);
   }
 
-  function sharpenTextObject(gameObject) {
-    if (gameObject?.type === "Text" && typeof gameObject.setResolution === "function") {
-      gameObject.setResolution(TEXT_RESOLUTION);
-    }
-    if (Array.isArray(gameObject?.list)) {
-      gameObject.list.forEach(sharpenTextObject);
-    }
-  }
-
-  function sharpenSceneText(scene) {
-    scene.children.list.forEach(sharpenTextObject);
-  }
-
-  function sharpenRankingTextObject(gameObject) {
-    if (gameObject?.type === "Text" && typeof gameObject.setResolution === "function") {
-      gameObject.setResolution(RANKING_TEXT_RESOLUTION);
-    }
-    if (Array.isArray(gameObject?.list)) {
-      gameObject.list.forEach(sharpenRankingTextObject);
-    }
+  function addText(scene, x, y, text, style) {
+    // Canvas 렌더러가 표시 크기를 계산할 때 생성 시 지정한 텍스처 해상도를 사용한다.
+    return scene.add.text(x, y, text, { resolution: TEXT_RESOLUTION, ...style });
   }
 
   function loadConfiguredStageImages(scene) {
@@ -251,11 +242,19 @@
     const source = scene.textures.get(sourceKey).getSourceImage();
     const sourceWidth = source.naturalWidth || source.width;
     const sourceHeight = source.naturalHeight || source.height;
-    const canvas = document.createElement("canvas");
-    canvas.width = sourceWidth;
-    canvas.height = sourceHeight;
-    const context = canvas.getContext("2d");
-    const blurAmount = Math.max(3, Math.round(Math.min(sourceWidth, sourceHeight) * 0.008));
+    const previewScale = Math.min(
+      1,
+      STAGE_PREVIEW_WIDTH * RENDER_SCALE / sourceWidth,
+      STAGE_PREVIEW_HEIGHT * RENDER_SCALE / sourceHeight,
+    );
+    const texture = scene.textures.createCanvas(
+      blurredKey,
+      Math.round(sourceWidth * previewScale),
+      Math.round(sourceHeight * previewScale),
+    );
+    const canvas = texture.getCanvas();
+    const context = texture.getContext();
+    const blurAmount = Math.max(1, Math.round(Math.min(canvas.width, canvas.height) * 0.008));
 
     context.imageSmoothingEnabled = true;
     context.imageSmoothingQuality = "high";
@@ -264,11 +263,11 @@
       source,
       -blurAmount,
       -blurAmount,
-      sourceWidth + blurAmount * 2,
-      sourceHeight + blurAmount * 2,
+      canvas.width + blurAmount * 2,
+      canvas.height + blurAmount * 2,
     );
     context.filter = "none";
-    scene.textures.addCanvas(blurredKey, canvas);
+    texture.refresh();
     applyHighQualityFilter(scene, blurredKey);
     return blurredKey;
   }
@@ -375,13 +374,14 @@
     const background = scene.add.graphics();
     const hitArea = scene.add.rectangle(0, 0, width, height, 0xffffff, 0.001)
       .setInteractive({ useHandCursor: true });
-    const text = scene.add.text(0, 0, label, {
+    const text = addText(scene, 0, 0, label, {
       fontFamily: '-apple-system, BlinkMacSystemFont, Pretendard, "Noto Sans KR", sans-serif',
       fontSize: options.fontSize || "24px",
       fontStyle: "600",
       color: textColor,
       letterSpacing: 0.3,
-    }).setOrigin(0.5).setResolution(TEXT_RESOLUTION);
+      resolution: options.resolution ?? TEXT_RESOLUTION,
+    }).setOrigin(0.5);
     const redraw = (hovered = false) => drawRoundedPanel(background, 0, 0, width, height, {
       radius: height / 2,
       fillColor: hovered ? (options.hoverColor || COLORS.accent) : fillColor,
@@ -500,6 +500,10 @@
   }
 
   function showRankingPanel(scene, initialStageId = 1, options = {}) {
+    const addRankingText = (x, y, text, style) => addText(scene, x, y, text, {
+      ...style,
+      resolution: RANKING_TEXT_RESOLUTION,
+    });
     const createdObjects = [];
     const addObject = (object) => {
       createdObjects.push(object);
@@ -519,21 +523,21 @@
       shadowAlpha: 0.72,
       highlightAlpha: 0.28,
     });
-    addObject(scene.add.text(300, 103, options.title || "STAGE RANKING", {
+    addObject(addRankingText(300, 103, options.title || "STAGE RANKING", {
       fontFamily: '-apple-system, BlinkMacSystemFont, Pretendard, sans-serif',
       fontSize: "13px",
       fontStyle: "700",
       color: "#b98cff",
       letterSpacing: 2.8,
     }).setDepth(9002));
-    addObject(scene.add.text(300, 139, "Fastest reveals.", {
+    addObject(addRankingText(300, 139, "Fastest reveals.", {
       fontFamily: '-apple-system, BlinkMacSystemFont, Pretendard, sans-serif',
       fontSize: "32px",
       fontStyle: "700",
       color: COLORS.text,
       letterSpacing: -1,
     }).setDepth(9002));
-    addObject(scene.add.text(980, 139, "LOCAL ARCHIVE", {
+    addObject(addRankingText(980, 139, "LOCAL ARCHIVE", {
       fontFamily: '-apple-system, BlinkMacSystemFont, Pretendard, sans-serif',
       fontSize: "10px",
       fontStyle: "600",
@@ -552,18 +556,18 @@
     };
     const drawRows = () => {
       clearRows();
-      const sharpenRows = () => rowObjects.forEach(sharpenRankingTextObject);
+
       const rankings = loadRankings()[selectedStageId] || [];
       const headers = [
-        scene.add.text(332, 235, "RANK", { fontFamily: "Arial, sans-serif", fontSize: "10px", color: "#777080", letterSpacing: 1.5 }),
-        scene.add.text(430, 235, "NICKNAME", { fontFamily: "Arial, sans-serif", fontSize: "10px", color: "#777080", letterSpacing: 1.5 }),
-        scene.add.text(948, 235, "TIME", { fontFamily: "Arial, sans-serif", fontSize: "10px", color: "#777080", letterSpacing: 1.5 }).setOrigin(1, 0),
+        addRankingText(332, 235, "RANK", { fontFamily: "Arial, sans-serif", fontSize: "10px", color: "#777080", letterSpacing: 1.5 }),
+        addRankingText(430, 235, "NICKNAME", { fontFamily: "Arial, sans-serif", fontSize: "10px", color: "#777080", letterSpacing: 1.5 }),
+        addRankingText(948, 235, "TIME", { fontFamily: "Arial, sans-serif", fontSize: "10px", color: "#777080", letterSpacing: 1.5 }).setOrigin(1, 0),
       ];
       headers.forEach((header) => header.setDepth(9003));
       rowObjects.push(...headers);
 
       if (!rankings.length) {
-        rowObjects.push(scene.add.text(GAME_WIDTH / 2, 405, "아직 등록된 기록이 없습니다.\n첫 번째 기록의 주인공이 되어보세요.", {
+        rowObjects.push(addRankingText(GAME_WIDTH / 2, 405, "아직 등록된 기록이 없습니다.\n첫 번째 기록의 주인공이 되어보세요.", {
           fontFamily: '-apple-system, BlinkMacSystemFont, Pretendard, "Noto Sans KR", sans-serif',
           fontSize: "18px",
           fontStyle: "500",
@@ -571,7 +575,6 @@
           align: "center",
           lineSpacing: 9,
         }).setOrigin(0.5).setDepth(9003));
-        sharpenRows();
         return;
       }
 
@@ -586,18 +589,17 @@
         const rowBackground = scene.add.rectangle(GAME_WIDTH / 2, y, 650, 36, isHighlighted ? COLORS.primary : 0xffffff, isHighlighted ? 0.16 : 0.025)
           .setStrokeStyle(1, isHighlighted ? COLORS.accent : 0xffffff, isHighlighted ? 0.48 : 0.04)
           .setDepth(9002);
-        const rank = scene.add.text(348, y, String(actualRank).padStart(2, "0"), {
+        const rank = addRankingText(348, y, String(actualRank).padStart(2, "0"), {
           fontFamily: '"SFMono-Regular", Consolas, monospace', fontSize: "13px", fontStyle: "700", color: index < 3 ? "#c9a7ff" : "#8d8795",
         }).setOrigin(0.5).setDepth(9003);
-        const nickname = scene.add.text(430, y, record.nickname, {
+        const nickname = addRankingText(430, y, record.nickname, {
           fontFamily: '-apple-system, BlinkMacSystemFont, Pretendard, "Noto Sans KR", sans-serif', fontSize: "15px", fontStyle: isHighlighted ? "700" : "500", color: COLORS.text,
         }).setOrigin(0, 0.5).setDepth(9003);
-        const time = scene.add.text(948, y, formatPuzzleTime(record.elapsedMs), {
+        const time = addRankingText(948, y, formatPuzzleTime(record.elapsedMs), {
           fontFamily: '"SFMono-Regular", Consolas, monospace', fontSize: "14px", fontStyle: "700", color: isHighlighted ? "#d9c4ff" : "#c6bfcb", letterSpacing: 0.8,
         }).setOrigin(1, 0.5).setDepth(9003);
         rowObjects.push(rowBackground, rank, nickname, time);
       });
-      sharpenRows();
     };
     const drawTabs = () => {
       tabButtons.forEach((button) => button.destroy());
@@ -617,10 +619,10 @@
           textColor: selected ? "#09070c" : COLORS.text,
           strokeColor: selected ? COLORS.accent : 0xffffff,
           fontSize: "11px",
+          resolution: RANKING_TEXT_RESOLUTION,
         }).setDepth(9004);
       });
       createdObjects.push(...tabButtons);
-      tabButtons.forEach(sharpenRankingTextObject);
     };
     const closePanel = () => {
       if (!isPanelActive) return;
@@ -649,8 +651,9 @@
       textColor: COLORS.text,
       strokeColor: 0xffffff,
       fontSize: "10px",
+      resolution: RANKING_TEXT_RESOLUTION,
     }).setDepth(9005));
-    addObject(scene.add.text(GAME_WIDTH / 2, 620, "기록은 현재 브라우저에 스테이지별로 저장됩니다.", {
+    addObject(addRankingText(GAME_WIDTH / 2, 620, "기록은 현재 브라우저에 스테이지별로 저장됩니다.", {
       fontFamily: '-apple-system, BlinkMacSystemFont, Pretendard, "Noto Sans KR", sans-serif',
       fontSize: "11px",
       color: "#716a79",
@@ -658,9 +661,6 @@
     }).setOrigin(0.5).setDepth(9002));
     drawTabs();
     drawRows();
-    sharpenSceneText(scene);
-    createdObjects.forEach(sharpenRankingTextObject);
-    rowObjects.forEach(sharpenRankingTextObject);
     return { close: closePanel };
   }
 
@@ -677,21 +677,21 @@
       configureHighResolutionCamera(this);
       addPremiumBackground(this);
 
-      const eyebrow = this.add.text(GAME_WIDTH / 2, 48, "PICSNAP  /  FASHION PUZZLE", {
+      const eyebrow = addText(this, GAME_WIDTH / 2, 48, "PICSNAP  /  FASHION PUZZLE", {
         fontFamily: '-apple-system, BlinkMacSystemFont, Pretendard, sans-serif',
         fontSize: "13px",
         fontStyle: "600",
         color: "#b98cff",
         letterSpacing: 3.2,
       }).setOrigin(0.5).setAlpha(0);
-      const title = this.add.text(GAME_WIDTH / 2, 92, "Reveal the look.", {
+      const title = addText(this, GAME_WIDTH / 2, 92, "Reveal the look.", {
         fontFamily: '-apple-system, BlinkMacSystemFont, Pretendard, "Noto Sans KR", sans-serif',
         fontSize: "54px",
         fontStyle: "700",
         color: COLORS.text,
         letterSpacing: -2.2,
       }).setOrigin(0.5).setAlpha(0).setTint(0xffffff, 0xf0e8ff, 0xffffff, 0xc9a7ff);
-      const subtitle = this.add.text(GAME_WIDTH / 2, 137, "조각을 연결하고, 감춰진 패션 룩을 완성하세요.", {
+      const subtitle = addText(this, GAME_WIDTH / 2, 137, "조각을 연결하고, 감춰진 패션 룩을 완성하세요.", {
         fontFamily: '-apple-system, BlinkMacSystemFont, Pretendard, "Noto Sans KR", sans-serif',
         fontSize: "18px",
         color: COLORS.muted,
@@ -700,6 +700,16 @@
       this.tweens.add({ targets: eyebrow, alpha: 1, y: 42, duration: 650, ease: "Cubic.Out" });
       this.tweens.add({ targets: title, alpha: 1, y: 84, duration: 760, delay: 90, ease: "Cubic.Out" });
       this.tweens.add({ targets: subtitle, alpha: 1, duration: 700, delay: 180, ease: "Cubic.Out" });
+
+      addButton(this, 976, 44, 166, 42, "방명록 남기기", () => {
+        window.location.assign("./guestbook.html");
+      }, {
+        fillColor: COLORS.primaryDark,
+        hoverColor: COLORS.primary,
+        textColor: COLORS.text,
+        strokeColor: COLORS.accent,
+        fontSize: "13px",
+      }).setDepth(100);
 
       addButton(this, 1160, 44, 166, 42, "VIEW RANKING", () => showRankingPanel(this, 1), {
         fillColor: COLORS.panelLight,
@@ -738,7 +748,7 @@
         const source = this.textures.get(textureKey).getSourceImage();
         const sourceWidth = source.naturalWidth || source.width;
         const sourceHeight = source.naturalHeight || source.height;
-        const thumbnailScale = Math.min(326 / sourceWidth, 284 / sourceHeight);
+        const thumbnailScale = Math.min(STAGE_PREVIEW_WIDTH / sourceWidth, STAGE_PREVIEW_HEIGHT / sourceHeight);
         const previewTextureKey = isCleared
           ? textureKey
           : ensureBlurredStageTexture(this, textureKey);
@@ -754,21 +764,21 @@
         });
         const image = this.add.image(0, -28, previewTextureKey)
           .setDisplaySize(sourceWidth * thumbnailScale, sourceHeight * thumbnailScale);
-        const lookLabel = this.add.text(-164, -194, `LOOK  ${String(stage.id).padStart(2, "0")}`, {
+        const lookLabel = addText(this, -164, -194, `LOOK  ${String(stage.id).padStart(2, "0")}`, {
           fontFamily: '-apple-system, BlinkMacSystemFont, Pretendard, sans-serif',
           fontSize: "12px",
           fontStyle: "600",
           color: isCleared ? "#d6c7ff" : "#b98cff",
           letterSpacing: 2.4,
         }).setOrigin(0, 0.5);
-        const stageTitle = this.add.text(-164, 155, stage.title.replace("Stage", "Editorial"), {
+        const stageTitle = addText(this, -164, 155, stage.title.replace("Stage", "Editorial"), {
           fontFamily: '-apple-system, BlinkMacSystemFont, Pretendard, "Noto Sans KR", sans-serif',
           fontSize: "24px",
           fontStyle: "600",
           color: COLORS.text,
           letterSpacing: -0.4,
         }).setOrigin(0, 0.5);
-        const status = this.add.text(164, 156, isCleared ? "REVEALED  ✓" : "DISCOVER  →", {
+        const status = addText(this, 164, 156, isCleared ? "REVEALED  ✓" : "DISCOVER  →", {
           fontFamily: '-apple-system, BlinkMacSystemFont, Pretendard, sans-serif',
           fontSize: "12px",
           fontStyle: "600",
@@ -797,14 +807,12 @@
         this.tweens.add({ targets: shimmer, x: 135, alpha: 0.42, duration: 1700, delay: 800 + index * 280, ease: "Sine.InOut", yoyo: true, repeat: -1, repeatDelay: 1800 });
       });
 
-      this.add.text(GAME_WIDTH / 2, 665, "SELECT A LOOK  ·  DRAG TO REVEAL", {
+      addText(this, GAME_WIDTH / 2, 665, "SELECT A LOOK  ·  DRAG TO REVEAL", {
         fontFamily: '-apple-system, BlinkMacSystemFont, Pretendard, sans-serif',
         fontSize: "11px",
         color: "#6e6e73",
         letterSpacing: 2.2,
       }).setOrigin(0.5);
-
-      sharpenSceneText(this);
 
     }
   }
@@ -855,20 +863,20 @@
         shadowAlpha: 0.3,
         highlightAlpha: 0.22,
       });
-      this.add.text(48, 31, `LOOK  ${String(this.stage.id).padStart(2, "0")}`, {
+      addText(this, 48, 31, `LOOK  ${String(this.stage.id).padStart(2, "0")}`, {
         fontFamily: '-apple-system, BlinkMacSystemFont, Pretendard, sans-serif',
         fontSize: "11px",
         fontStyle: "600",
         color: "#b98cff",
         letterSpacing: 2.3,
       }).setOrigin(0, 0.5).setDepth(2001);
-      this.add.text(48, 51, this.stage.title.replace("Stage", "Editorial"), {
+      addText(this, 48, 51, this.stage.title.replace("Stage", "Editorial"), {
         fontFamily: '-apple-system, BlinkMacSystemFont, Pretendard, sans-serif',
         fontSize: "21px",
         fontStyle: "600",
         color: COLORS.text,
       }).setOrigin(0, 0.5).setDepth(2001);
-      this.add.text(GAME_WIDTH / 2, 40, "맞는 조각은 연결되며, 연결된 조각은 함께 움직입니다", {
+      addText(this, GAME_WIDTH / 2, 40, "맞는 조각은 연결되며, 연결된 조각은 함께 움직입니다", {
         fontFamily: '-apple-system, BlinkMacSystemFont, Pretendard, "Noto Sans KR", sans-serif',
         fontSize: "15px",
         color: COLORS.muted,
@@ -892,20 +900,20 @@
         shadowAlpha: 0.42,
         highlightAlpha: 0.24,
       });
-      this.add.text(GAME_WIDTH / 2, 98, "PUZZLE TIME", {
+      addText(this, GAME_WIDTH / 2, 98, "PUZZLE TIME", {
         fontFamily: '-apple-system, BlinkMacSystemFont, Pretendard, sans-serif',
         fontSize: "9px",
         fontStyle: "700",
         color: "#9f7ad9",
         letterSpacing: 2.1,
       }).setOrigin(0.5).setDepth(2001);
-      this.timerText = this.add.text(GAME_WIDTH / 2, 119, formatPuzzleTime(0), {
+      this.timerText = addText(this, GAME_WIDTH / 2, 119, formatPuzzleTime(0), {
         fontFamily: '"SFMono-Regular", Consolas, monospace',
         fontSize: "20px",
         fontStyle: "700",
         color: "#f6f0ff",
         letterSpacing: 1.4,
-      }).setOrigin(0.5).setDepth(2001).setResolution(TEXT_RESOLUTION);
+      }).setOrigin(0.5).setDepth(2001);
       const updateTimer = () => {
         if (this.isClearing) return;
         this.elapsedMs = Math.max(0, performance.now() - this.timerStartedAt);
@@ -935,8 +943,6 @@
           ease: "Cubic.Out",
         });
       });
-
-      sharpenSceneText(this);
 
     }
 
@@ -1018,10 +1024,9 @@
           const roundedKey = `${key}-rounded`;
 
           if (!this.textures.exists(key)) {
-            const canvas = document.createElement("canvas");
-            canvas.width = textureWidth;
-            canvas.height = textureHeight;
-            const context = canvas.getContext("2d");
+            // file:// 사진을 그리기 전에 텍스처를 등록해야 초기 픽셀 읽기가 허용된다.
+            const texture = this.textures.createCanvas(key, textureWidth, textureHeight);
+            const context = texture.getContext();
             context.imageSmoothingEnabled = true;
             context.imageSmoothingQuality = "high";
             context.drawImage(
@@ -1035,15 +1040,13 @@
               textureWidth,
               textureHeight,
             );
-            this.textures.addCanvas(key, canvas);
+            texture.refresh();
             applyHighQualityFilter(this, key);
           }
 
           if (!this.textures.exists(roundedKey)) {
-            const roundedCanvas = document.createElement("canvas");
-            roundedCanvas.width = textureWidth;
-            roundedCanvas.height = textureHeight;
-            const roundedContext = roundedCanvas.getContext("2d");
+            const roundedTexture = this.textures.createCanvas(roundedKey, textureWidth, textureHeight);
+            const roundedContext = roundedTexture.getContext();
             const inset = 2;
             const radius = Math.min(PIECE_CORNER_RADIUS, textureWidth / 5, textureHeight / 5);
 
@@ -1070,7 +1073,7 @@
             roundedContext.strokeStyle = "rgba(255, 255, 255, 0.72)";
             roundedContext.lineWidth = 3;
             roundedContext.stroke();
-            this.textures.addCanvas(roundedKey, roundedCanvas);
+            roundedTexture.refresh();
             applyHighQualityFilter(this, roundedKey);
           }
         }
@@ -1398,13 +1401,13 @@
       const pulse = this.add.circle(1030, 116, 18, COLORS.primary, 0.22)
         .setDepth(2999)
         .setBlendMode(Phaser.BlendModes.ADD);
-      const feedback = this.add.text(1030, 116, label, {
+      const feedback = addText(this, 1030, 116, label, {
         fontFamily: '-apple-system, BlinkMacSystemFont, Pretendard, sans-serif',
         fontSize: "15px",
         fontStyle: "600",
         color: "#c9a7ff",
         letterSpacing: 2.4,
-      }).setOrigin(0.5).setDepth(3000).setScale(0.55).setAlpha(0).setResolution(TEXT_RESOLUTION);
+      }).setOrigin(0.5).setDepth(3000).setScale(0.55).setAlpha(0);
       this.tweens.add({ targets: pulse, scale: 5.2, alpha: 0, duration: 520, ease: "Cubic.Out", onComplete: () => pulse.destroy() });
       this.tweens.add({
         targets: feedback,
@@ -1454,14 +1457,14 @@
       configureHighResolutionCamera(this);
       addPremiumBackground(this, COLORS.primary);
       const textureKey = ensureStageTexture(this, this.stage);
-      const eyebrow = this.add.text(GAME_WIDTH / 2, 28, `EDITORIAL  ${String(this.stage.id).padStart(2, "0")}  /  COMPLETE`, {
+      const eyebrow = addText(this, GAME_WIDTH / 2, 28, `EDITORIAL  ${String(this.stage.id).padStart(2, "0")}  /  COMPLETE`, {
         fontFamily: '-apple-system, BlinkMacSystemFont, Pretendard, sans-serif',
         fontSize: "12px",
         fontStyle: "600",
         color: "#b98cff",
         letterSpacing: 2.7,
       }).setOrigin(0.5).setAlpha(0);
-      const heading = this.add.text(GAME_WIDTH / 2, 69, "Look revealed.", {
+      const heading = addText(this, GAME_WIDTH / 2, 69, "Look revealed.", {
         fontFamily: '-apple-system, BlinkMacSystemFont, Pretendard, sans-serif',
         fontSize: "42px",
         fontStyle: "700",
@@ -1470,20 +1473,20 @@
       }).setOrigin(0.5).setAlpha(0).setTint(0xffffff, 0xeee6ff, 0xffffff, 0xc9a7ff);
       this.tweens.add({ targets: eyebrow, alpha: 1, duration: 520, delay: 120 });
       this.tweens.add({ targets: heading, alpha: 1, y: 63, duration: 680, delay: 180, ease: "Cubic.Out" });
-      this.add.text(1220, 28, "FINAL TIME", {
+      addText(this, 1220, 28, "FINAL TIME", {
         fontFamily: '-apple-system, BlinkMacSystemFont, Pretendard, sans-serif',
         fontSize: "9px",
         fontStyle: "700",
         color: "#8f729f",
         letterSpacing: 1.8,
       }).setOrigin(1, 0.5);
-      this.add.text(1220, 50, formatPuzzleTime(this.elapsedMs), {
+      addText(this, 1220, 50, formatPuzzleTime(this.elapsedMs), {
         fontFamily: '"SFMono-Regular", Consolas, monospace',
         fontSize: "17px",
         fontStyle: "700",
         color: "#d9c4ff",
         letterSpacing: 1.1,
-      }).setOrigin(1, 0.5).setResolution(TEXT_RESOLUTION);
+      }).setOrigin(1, 0.5);
 
       const source = this.textures.get(textureKey).getSourceImage();
       const sourceWidth = source.naturalWidth || source.width;
@@ -1639,7 +1642,7 @@
         strokeColor: COLORS.accent,
         fontSize: "11px",
       });
-      this.add.text(GAME_WIDTH / 2, 642, "PRESS & HOLD TO ZOOM  ·  MOVE TO EXPLORE", {
+      addText(this, GAME_WIDTH / 2, 642, "PRESS & HOLD TO ZOOM  ·  MOVE TO EXPLORE", {
         fontFamily: '-apple-system, BlinkMacSystemFont, Pretendard, "Noto Sans KR", sans-serif',
         fontSize: "11px",
         fontStyle: "600",
@@ -1647,13 +1650,15 @@
         letterSpacing: 1.45,
       }).setOrigin(0.5);
 
-      sharpenSceneText(this);
-
     }
   }
 
   const config = {
-    type: Phaser.AUTO,
+    // 브라우저는 file:// 이미지의 WebGL 텍스처 업로드를 차단할 수 있다.
+    type: window.location.protocol === "file:" ? Phaser.CANVAS : Phaser.AUTO,
+    loader: {
+      imageLoadType: "HTMLImageElement",
+    },
     parent: "game-container",
     width: GAME_WIDTH * RENDER_SCALE,
     height: GAME_HEIGHT * RENDER_SCALE,

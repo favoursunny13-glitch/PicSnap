@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#050408">
   <title>PicSnap</title>
   <link rel="icon" href="data:,">
-  <link rel="stylesheet" href="./style.css?v=20260830-6">
+  <link rel="stylesheet" href="./style.css?v=20261112-celebration-6">
 </head>
 <body>
   <main id="game-container" aria-label="PicSnap 퍼즐 게임">
@@ -17,8 +17,18 @@
       <div class="side-rail side-rail-right"><span>PICSNAP&nbsp;&nbsp;/&nbsp;&nbsp;EDITORIAL</span></div>
     </div>
   </main>
+  <input id="celebration-code" class="celebration-code" type="text" aria-label="비밀 문구"
+    tabindex="-1" autocomplete="off" spellcheck="false" inputmode="none" hidden>
+  <dialog id="celebration" class="celebration" aria-labelledby="celebration-title">
+    <div class="celebration-effects" aria-hidden="true"></div>
+    <div class="celebration-message">
+      <h1 id="celebration-title">사랑아<br><span>졸업 전시를 축하해~~</span></h1>
+      <form method="dialog"><button type="submit">닫기</button></form>
+    </div>
+  </dialog>
   <noscript>PicSnap을 실행하려면 JavaScript를 활성화해 주세요.</noscript>
   <script src="https://cdn.jsdelivr.net/npm/phaser@3.90.0/dist/phaser.min.js"></script>
-  <script src="./js/game.js?v=20261111-text-1"></script>
+  <script src="./js/celebration-fireworks.js?v=20261112-2"></script>
+  <script src="./js/game.js?v=20261112-celebration-6"></script>
 </body>
 </html>

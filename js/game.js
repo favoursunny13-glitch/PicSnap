@@ -664,6 +664,141 @@
     return { close: closePanel };
   }
 
+  function enableGraduationEasterEgg(scene) {
+    const input = document.getElementById("celebration-code");
+    const dialog = document.getElementById("celebration");
+    const effects = dialog.querySelector(".celebration-effects");
+    const gameContainer = document.getElementById("game-container");
+    const phrase = "졸업전시 축하해";
+    let wasSceneInputEnabled = null;
+    let stopFireworks = null;
+
+    const focusInput = () => {
+      if (!dialog.open) input.focus({ preventScroll: true });
+    };
+    const clearInput = () => {
+      input.value = "";
+    };
+    const restoreGameInput = () => {
+      if (wasSceneInputEnabled === null) return;
+      scene.input.enabled = wasSceneInputEnabled;
+      wasSceneInputEnabled = null;
+    };
+    const clearEffects = () => {
+      stopFireworks?.();
+      stopFireworks = null;
+      effects.replaceChildren();
+    };
+    const submitCode = (event) => {
+      if (event.key !== "Enter" && event.code !== "Enter" && event.code !== "NumpadEnter") return;
+      if (event.isComposing || dialog.open) return;
+
+      const matchesPhrase = input.value.normalize("NFC").trim() === phrase;
+      clearInput();
+      if (!matchesPhrase) return;
+      dialog.showModal();
+      wasSceneInputEnabled ??= scene.input.enabled;
+      scene.input.enabled = false;
+      clearEffects();
+      if (!window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+        playGraduationEffects(effects);
+        stopFireworks = startCelebrationFireworks(effects);
+      }
+    };
+    const onClose = () => {
+      if (dialog.open) return;
+      restoreGameInput();
+      clearEffects();
+      focusInput();
+    };
+    const restoreAfterClick = (event) => {
+      if (event.pointerType === "mouse") focusInput();
+    };
+
+    input.hidden = false;
+    // Enter 키를 놓을 때 확인하면 한글 입력기가 확정한 마지막 음절까지 읽을 수 있다.
+    input.addEventListener("keyup", submitCode);
+    input.addEventListener("blur", clearInput);
+    gameContainer.addEventListener("pointerup", restoreAfterClick);
+    dialog.addEventListener("close", onClose);
+    focusInput();
+
+    scene.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      input.removeEventListener("keyup", submitCode);
+      input.removeEventListener("blur", clearInput);
+      gameContainer.removeEventListener("pointerup", restoreAfterClick);
+      dialog.removeEventListener("close", onClose);
+      dialog.close();
+      restoreGameInput();
+      clearEffects();
+      clearInput();
+      input.hidden = true;
+    });
+  }
+
+  function playGraduationEffects(effects) {
+    const colors = ["#ffce72", "#f88ab6", "#a98cff", "#83e4dd", "#fff3dd"];
+    const random = (min, max) => min + Math.random() * (max - min);
+    const addParticle = (type, x, delay) => {
+      const particle = document.createElement("i");
+      particle.className = `celebration-${type}`;
+      particle.style.left = x;
+      particle.style.color = colors[Math.floor(Math.random() * colors.length)];
+      particle.style.animationDelay = `${delay}s`;
+      particle.style.animationDuration = `${random(2.4, 4.6)}s`;
+      particle.style.setProperty("--spin", `${random(240, 920)}deg`);
+      effects.append(particle);
+      return particle;
+    };
+
+    for (let i = 0; i < 105; i += 1) {
+      const confetti = addParticle("fall", `${random(0, 100)}%`, random(-1, 4));
+      confetti.style.setProperty("--drift", `${random(-12, 12)}vw`);
+    }
+
+    for (let i = 0; i < 48; i += 1) {
+      const glitter = addParticle("glitter", `${random(0, 100)}%`, random(-1.4, 2.8));
+      glitter.style.setProperty("--glitter-drop", `${random(16, 65)}vh`);
+    }
+
+    for (const direction of [1, 0, -1]) {
+      const origin = `${50 - direction * 46}%`;
+      const isCenter = direction === 0;
+      const popper = document.createElement("div");
+      popper.className = "celebration-popper";
+      popper.style.left = origin;
+      popper.style.setProperty("--popper-angle", `${direction * 34}deg`);
+      effects.append(popper);
+
+      const sparkCount = isCenter ? 18 : 28;
+      for (let i = 0; i < sparkCount; i += 1) {
+        const spark = addParticle("burst", origin, random(0, 0.55));
+        const travel = isCenter ? random(-12, 12) : direction * random(3, 32);
+        const rise = isCenter ? random(12, 30) : random(23, 73);
+        spark.style.setProperty("--travel", `${travel}vw`);
+        spark.style.setProperty("--rise", `${rise}vh`);
+        if (isCenter) spark.style.bottom = "clamp(45px, 8vw, 106px)";
+      }
+    }
+
+    const photoPositions = [13, 85, 30, 70, 9, 93, 38, 62, 20, 79, 50];
+    photoPositions.forEach((position, index) => {
+      const photo = document.createElement("img");
+      const number = String(index).padStart(2, "0");
+      photo.alt = "";
+      photo.style.left = `${position}%`;
+      photo.style.animationDelay = `${0.24 + index * 0.46}s`;
+      photo.style.animationDuration = `${random(5.6, 6.7)}s`;
+      photo.style.setProperty("--drift", `${position < 50 ? 4 : -4}vw`);
+      photo.style.setProperty("--turn", `${index % 2 === 0 ? 1 : -1}turn`);
+      photo.style.setProperty("--tilt", `${random(-18, 18)}deg`);
+      photo.className = "celebration-photo";
+      photo.addEventListener("load", () => photo.classList.add("is-falling"), { once: true });
+      photo.src = `./assets/images/celebration/photo-${number}.jpg`;
+      effects.append(photo);
+    });
+  }
+
   class MenuScene extends Phaser.Scene {
     constructor() {
       super("MenuScene");
@@ -676,6 +811,7 @@
     create() {
       configureHighResolutionCamera(this);
       addPremiumBackground(this);
+      enableGraduationEasterEgg(this);
 
       const eyebrow = addText(this, GAME_WIDTH / 2, 48, "PICSNAP  /  FASHION PUZZLE", {
         fontFamily: '-apple-system, BlinkMacSystemFont, Pretendard, sans-serif',
